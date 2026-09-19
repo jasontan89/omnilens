@@ -85,6 +85,13 @@ export class GeminiLiveClient {
 
         if (event.code === 1000) {
           this.callbacks.onConnectionChange('disconnected');
+        } else if (event.reason.toLowerCase().includes('quota') || event.reason.toLowerCase().includes('billing')) {
+          this.callbacks.onConnectionChange(
+            'error',
+            this.settings.enableGoogleSearch
+              ? 'Quota Exceeded: Grounding with Google Search requires a paid Google Cloud billing account. Please disable "Grounding with Google Search" in Settings to connect on the Free Tier.'
+              : 'Quota Exceeded: You have reached your current Google Gemini free tier rate limit. Please check your quota at ai.google.dev or switch to Gemini 3 Flash Live.'
+          );
         } else if (event.code === 1008 || event.reason.toLowerCase().includes('api key')) {
           this.callbacks.onConnectionChange('error', 'Invalid API key or unauthorized access.');
         } else {

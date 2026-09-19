@@ -404,4 +404,56 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     });
     expect(callbacks.onInterrupted).toHaveBeenCalled();
   });
+
+  it('handles quota rejection when Google Search Grounding is enabled and advises disabling search', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Simulate Google WebSocket closing with quota exceeded error reason
+    mockWsInstance.close(1008, 'You exceeded your current quota, please check your plan and billing details.');
+
+    expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('Grounding with Google Search requires a paid Google Cloud billing account')
+    );
+  });
+
+  it('handles quota rejection when Google Search Grounding is disabled and suggests free tier limits', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: false },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Simulate Google WebSocket closing with quota exceeded error reason
+    mockWsInstance.close(1008, 'You exceeded your current quota, please check your plan and billing details.');
+
+    expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('You have reached your current Google Gemini free tier rate limit')
+    );
+  });
 });
