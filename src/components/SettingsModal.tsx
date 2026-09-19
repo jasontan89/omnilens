@@ -58,7 +58,7 @@ const SUPPORTED_MODELS: {
     name: 'Gemini 3.8 Live',
     badge: 'Deep Reasoning',
     badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-    desc: 'Enhanced reasoning and nuanced code comprehension. Thinking level disabled for compatibility.',
+    desc: 'Enhanced reasoning and code comprehension with balanced medium thinking depth.',
     icon: <Cpu className="w-4 h-4 text-purple-400" />,
   },
   {
@@ -66,7 +66,7 @@ const SUPPORTED_MODELS: {
     name: 'Gemini 3.8 Live Extended Thinking',
     badge: 'Maximum Cognitive Depth',
     badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-    desc: 'High-level thinking enabled for complex architecture, algorithm verification, and deep puzzles.',
+    desc: 'Extended thinking mode (high thinking level) for complex system architecture, mathematical proofs, and deep debugging.',
     icon: <BrainCircuit className="w-4 h-4 text-indigo-400" />,
   },
   {

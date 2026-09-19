@@ -3,9 +3,28 @@ import type {
   BidiRealtimeInput,
   BidiServerMessage,
   ConnectionState,
+  LiveModel,
   SessionSettings,
 } from '../../types/live';
 import { PERSONA_PROMPTS } from './prompts';
+
+/**
+ * Maps the user's copilot model mode to the official Google Gemini Live API model endpoint.
+ * In Google's Live API architecture, the native audio and thinking engine is gemini-3.1-flash-live-preview.
+ */
+export function resolveLiveApiModel(model: LiveModel): string {
+  switch (model) {
+    case 'gemini-3.5-live-translate-preview':
+      return 'models/gemini-3.5-live-translate-preview';
+    case 'gemini-3.5-transcribe-live':
+      return 'models/gemini-3.5-transcribe-live';
+    case 'gemini-3.8-live':
+    case 'gemini-3.8-live-extended-thinking':
+    case 'gemini-3.1-flash-live-preview':
+    default:
+      return 'models/gemini-3.1-flash-live-preview';
+  }
+}
 
 export interface LiveClientCallbacks {
   onConnectionChange: (state: ConnectionState, error?: string) => void;
@@ -138,16 +157,25 @@ export class GeminiLiveClient {
     }
 
     // Thinking configuration:
-    // IMPORTANT: gemini-3.8-live throws "Thinking level is not supported for this model" if thinkingConfig is sent.
-    // Only attach thinkingConfig for models that explicitly support thinking.
-    if (this.settings.model === 'gemini-3.8-live-extended-thinking') {
-      generationConfig.thinkingConfig = {
-        thinkingLevel: 'high',
-      };
-    } else if (this.settings.model === 'gemini-3.1-flash-live-preview') {
-      generationConfig.thinkingConfig = {
-        thinkingLevel: 'minimal',
-      };
+    // Google's Live API engine (gemini-3.1-flash-live-preview) natively supports thinkingLevel:
+    // - gemini-3.8-live-extended-thinking: 'high' (maximum reasoning depth for complex math/architecture/code)
+    // - gemini-3.8-live: 'medium' (balanced deep reasoning)
+    // - gemini-3.1-flash-live-preview: 'minimal' (lowest latency for instant speech)
+    // - Special purpose models (transcribe / translate) do not use thinkingConfig
+    if (!isTranslate && !isTranscribeOnly) {
+      if (this.settings.model === 'gemini-3.8-live-extended-thinking') {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: 'high',
+        };
+      } else if (this.settings.model === 'gemini-3.8-live') {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: 'medium',
+        };
+      } else if (this.settings.model === 'gemini-3.1-flash-live-preview') {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: 'minimal',
+        };
+      }
     }
 
     // Translation configuration
@@ -158,9 +186,11 @@ export class GeminiLiveClient {
       };
     }
 
+    const targetModel = resolveLiveApiModel(this.settings.model);
+
     const setupPayload: BidiContentSetup = {
       setup: {
-        model: `models/${this.settings.model}`,
+        model: targetModel,
         generationConfig,
         systemInstruction: {
           parts: [{ text: fullPrompt }],
@@ -199,11 +229,14 @@ export class GeminiLiveClient {
       this.callbacks.onInterrupted();
     }
 
-    // Audio stream output (24kHz raw PCM)
+    // Audio stream output (24kHz raw PCM) & text fallback
     if (content.modelTurn?.parts) {
       for (const part of content.modelTurn.parts) {
         if (part.inlineData?.data) {
           this.callbacks.onAudioChunk(part.inlineData.data);
+        }
+        if (part.text && !content.outputTranscription?.text) {
+          this.callbacks.onOutputTranscription(part.text);
         }
       }
     }

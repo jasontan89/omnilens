@@ -85,7 +85,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
   });
 
-  it('omits thinkingConfig for gemini-3.8-live to prevent "thinking level not supported" error', async () => {
+  it('maps gemini-3.8-live to models/gemini-3.1-flash-live-preview with medium thinkingLevel', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
       onAudioChunk: vi.fn(),
@@ -102,13 +102,13 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(mockWsInstance.sentMessages.length).toBe(1);
     const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
 
-    expect(setupMsg.setup.model).toBe('models/gemini-3.8-live');
-    // Crucial: thinkingConfig MUST be undefined for gemini-3.8-live
-    expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
+    // Maps to official Live API engine with balanced medium thinking
+    expect(setupMsg.setup.model).toBe('models/gemini-3.1-flash-live-preview');
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'medium' });
     expect(setupMsg.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
   });
 
-  it('configures thinkingConfig with high thinkingLevel for gemini-3.8-live-extended-thinking', async () => {
+  it('maps gemini-3.8-live-extended-thinking to models/gemini-3.1-flash-live-preview with high thinkingLevel', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
       onAudioChunk: vi.fn(),
@@ -123,7 +123,8 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
-    expect(setupMsg.setup.model).toBe('models/gemini-3.8-live-extended-thinking');
+    // Maps to official Live API engine with maximum high thinking depth
+    expect(setupMsg.setup.model).toBe('models/gemini-3.1-flash-live-preview');
     expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'high' });
   });
 
