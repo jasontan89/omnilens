@@ -1,5 +1,18 @@
 import React from 'react';
-import { Radio, Settings, ShieldAlert, Sparkles, Terminal, Users, GraduationCap, Bot } from 'lucide-react';
+import {
+  Radio,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  Terminal,
+  Users,
+  GraduationCap,
+  Bot,
+  Network,
+  ShieldCheck,
+  Languages,
+  TrendingUp,
+} from 'lucide-react';
 import type { ConnectionState, CopilotPersona, LiveModel } from '../types/live';
 
 interface HeaderProps {
@@ -13,16 +26,24 @@ interface HeaderProps {
 
 const PERSONA_ICONS: Record<CopilotPersona, React.ReactNode> = {
   'pair-programmer': <Terminal className="w-4 h-4" />,
+  'system-design': <Network className="w-4 h-4" />,
   'meeting-copilot': <Users className="w-4 h-4" />,
   'study-tutor': <GraduationCap className="w-4 h-4" />,
+  'legal-auditor': <ShieldCheck className="w-4 h-4" />,
+  'language-tutor': <Languages className="w-4 h-4" />,
+  'financial-analyst': <TrendingUp className="w-4 h-4" />,
   'general-assistant': <Bot className="w-4 h-4" />,
 };
 
 const PERSONA_LABELS: Record<CopilotPersona, string> = {
-  'pair-programmer': 'Pair Programmer',
-  'meeting-copilot': 'Meeting Copilot',
-  'study-tutor': 'Study Tutor',
-  'general-assistant': 'General Assistant',
+  'pair-programmer': 'Pair Dev',
+  'system-design': 'Architecture',
+  'meeting-copilot': 'Meeting',
+  'study-tutor': 'Tutor',
+  'legal-auditor': 'Legal Audit',
+  'language-tutor': 'Language',
+  'financial-analyst': 'Finance',
+  'general-assistant': 'Assistant',
 };
 
 export const Header: React.FC<HeaderProps> = ({
@@ -118,7 +139,15 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Model Pill */}
         <div className="hidden lg:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono bg-gray-900 border border-gray-800 text-gray-300">
           <span className="text-purple-400">⚡</span>
-          {currentModel === 'gemini-3.1-flash-live-preview' ? '3 Flash Live' : '3.8 Live'}
+          {currentModel === 'gemini-3.1-flash-live-preview'
+            ? '3 Flash Live'
+            : currentModel === 'gemini-3.8-live'
+            ? '3.8 Live'
+            : currentModel === 'gemini-3.8-live-extended-thinking'
+            ? '3.8 Thinking'
+            : currentModel === 'gemini-3.5-live-translate-preview'
+            ? '3.5 Translate'
+            : '3.5 Transcribe'}
         </div>
 
         {/* Settings button */}

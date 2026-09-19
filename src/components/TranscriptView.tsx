@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Bot, User, Sparkles, Send, Copy, Check, Trash2 } from 'lucide-react';
+import { Bot, User, Sparkles, Send, Copy, Check, Trash2, BookmarkPlus } from 'lucide-react';
 import type { TranscriptMessage } from '../types/live';
 
 interface TranscriptViewProps {
   messages: TranscriptMessage[];
   onSendMessage: (text: string) => void;
   onClearTranscript: () => void;
+  onAddNoteFromMessage?: (msg: TranscriptMessage) => void;
   isConnected: boolean;
 }
 
@@ -13,10 +14,12 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   messages,
   onSendMessage,
   onClearTranscript,
+  onAddNoteFromMessage,
   isConnected,
 }) => {
   const [inputText, setInputText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [notedMsgId, setNotedMsgId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Auto-scroll to bottom as messages arrive
@@ -40,6 +43,14 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveToNotes = (msg: TranscriptMessage) => {
+    if (onAddNoteFromMessage) {
+      onAddNoteFromMessage(msg);
+      setNotedMsgId(msg.id);
+      setTimeout(() => setNotedMsgId(null), 2000);
+    }
   };
 
   return (
@@ -93,50 +104,73 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex items-start gap-2.5 ${
-                msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'
-              }`}
-            >
-              {/* Avatar */}
+          messages.map((msg) => {
+            const isJustNoted = notedMsgId === msg.id;
+            return (
               <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs shadow-md ${
-                  msg.sender === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : msg.sender === 'gemini'
-                    ? 'bg-gradient-to-tr from-purple-600 to-pink-600 text-white'
-                    : 'bg-gray-800 text-gray-400'
+                key={msg.id}
+                className={`flex items-start gap-2.5 group ${
+                  msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                {msg.sender === 'user' ? (
-                  <User className="w-3.5 h-3.5" />
-                ) : (
-                  <Bot className="w-3.5 h-3.5" />
-                )}
-              </div>
+                {/* Avatar */}
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs shadow-md ${
+                    msg.sender === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : msg.sender === 'gemini'
+                      ? 'bg-gradient-to-tr from-purple-600 to-pink-600 text-white'
+                      : 'bg-gray-800 text-gray-400'
+                  }`}
+                >
+                  {msg.sender === 'user' ? (
+                    <User className="w-3.5 h-3.5" />
+                  ) : (
+                    <Bot className="w-3.5 h-3.5" />
+                  )}
+                </div>
 
-              {/* Message Bubble */}
-              <div
-                className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                  msg.sender === 'user'
-                    ? 'bg-blue-600/90 text-white rounded-tr-none'
-                    : 'bg-gray-900/90 text-gray-200 border border-gray-800 rounded-tl-none'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3 mb-1 text-[10px] opacity-70">
-                  <span className="font-semibold">
-                    {msg.sender === 'user' ? 'You' : 'Gemini'}
-                  </span>
-                  <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                </div>
-                <div className="whitespace-pre-wrap select-text font-sans">
-                  {msg.text}
+                {/* Message Bubble */}
+                <div
+                  className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed relative ${
+                    msg.sender === 'user'
+                      ? 'bg-blue-600/90 text-white rounded-tr-none'
+                      : 'bg-gray-900/90 text-gray-200 border border-gray-800 rounded-tl-none'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3 mb-1 text-[10px] opacity-70">
+                    <span className="font-semibold">
+                      {msg.sender === 'user' ? 'You' : 'Gemini'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+
+                      {/* Add Note Button on Bubble */}
+                      {onAddNoteFromMessage && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveToNotes(msg)}
+                          className={`p-0.5 rounded hover:bg-white/20 transition-all ${
+                            isJustNoted ? 'text-emerald-300' : 'text-gray-400 hover:text-white'
+                          }`}
+                          title="Save this line to Action Items & Notes"
+                        >
+                          {isJustNoted ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <BookmarkPlus className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="whitespace-pre-wrap select-text font-sans">
+                    {msg.text}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
