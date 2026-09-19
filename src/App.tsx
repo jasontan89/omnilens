@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS: SessionSettings = {
   screenFps: 1,
   customInstructions: '',
   targetLanguageCode: 'es',
-  enableGoogleSearch: true,
+  enableGoogleSearch: false, // Default to FALSE to ensure 100% Free Tier compatibility without quota rejection
 };
 
 export const App: React.FC = () => {
@@ -371,6 +371,12 @@ export const App: React.FC = () => {
     setSettings((prev) => ({ ...prev, persona }));
   };
 
+  // Quick 1-click fix when Free Tier hits quota due to Google Search Grounding
+  const handleDisableSearchGrounding = useCallback(() => {
+    setSettings((prev) => ({ ...prev, enableGoogleSearch: false }));
+    setErrorMessage(undefined);
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#090a0f] text-gray-100 selection:bg-purple-600 selection:text-white pb-24">
       {/* Top Header */}
@@ -382,6 +388,7 @@ export const App: React.FC = () => {
         enableGoogleSearch={settings.enableGoogleSearch}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSelectPersona={handleSelectPersona}
+        onDisableSearchGrounding={handleDisableSearchGrounding}
       />
 
       {/* Main Workspace Layout */}
