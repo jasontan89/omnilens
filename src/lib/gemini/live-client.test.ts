@@ -82,6 +82,99 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.model).toBe('models/gemini-3.1-flash-live-preview');
     expect(setupMsg.setup.generationConfig.responseModalities).toEqual(['AUDIO']);
     expect(setupMsg.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+  });
+
+  it('omits thinkingConfig for gemini-3.8-live to prevent "thinking level not supported" error', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient({ ...testSettings, model: 'gemini-3.8-live' }, callbacks);
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockWsInstance.sentMessages.length).toBe(1);
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+
+    expect(setupMsg.setup.model).toBe('models/gemini-3.8-live');
+    // Crucial: thinkingConfig MUST be undefined for gemini-3.8-live
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
+    expect(setupMsg.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
+  });
+
+  it('configures thinkingConfig with high thinkingLevel for gemini-3.8-live-extended-thinking', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient({ ...testSettings, model: 'gemini-3.8-live-extended-thinking' }, callbacks);
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.model).toBe('models/gemini-3.8-live-extended-thinking');
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'high' });
+  });
+
+  it('configures translationConfig for gemini-3.5-live-translate-preview without thinkingConfig', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, model: 'gemini-3.5-live-translate-preview', targetLanguageCode: 'ja' },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.model).toBe('models/gemini-3.5-live-translate-preview');
+    expect(setupMsg.setup.generationConfig.translationConfig).toEqual({
+      targetLanguageCode: 'ja',
+      echoTargetLanguage: true,
+    });
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
+  });
+
+  it('configures TEXT responseModality and omits speech/thinking for gemini-3.5-transcribe-live', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, model: 'gemini-3.5-transcribe-live' },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.model).toBe('models/gemini-3.5-transcribe-live');
+    expect(setupMsg.setup.generationConfig.responseModalities).toEqual(['TEXT']);
+    expect(setupMsg.setup.generationConfig.speechConfig).toBeUndefined();
+    expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it('waits for setupComplete handshake before enabling isConnected and sending realtimeInput', async () => {

@@ -100,27 +100,61 @@ export class GeminiLiveClient {
   private sendSetup(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-    const basePrompt = PERSONA_PROMPTS[this.settings.persona] || PERSONA_PROMPTS['pair-programmer'];
+    let basePrompt = PERSONA_PROMPTS[this.settings.persona] || PERSONA_PROMPTS['pair-programmer'];
+    if (this.settings.model === 'gemini-3.5-live-translate-preview') {
+      const targetLang = this.settings.targetLanguageCode || 'es';
+      basePrompt = `You are a real-time speech and multimodal translation interpreter. Accurately translate spoken and textual input into the target language code: ${targetLang}. Maintain natural phrasing, correct cultural nuances, and clear pronunciation.`;
+    } else if (this.settings.model === 'gemini-3.5-transcribe-live') {
+      basePrompt = `You are a real-time live transcription engine. Accurately transcribe incoming speech and describe visual context concisely into formatted text without verbal commentary.`;
+    }
+
     const fullPrompt = this.settings.customInstructions
       ? `${basePrompt}\n\nAdditional user guidelines: ${this.settings.customInstructions}`
       : basePrompt;
 
+    // Build generationConfig dynamically based on model capabilities
+    const isTranscribeOnly = this.settings.model === 'gemini-3.5-transcribe-live';
+    const isTranslate = this.settings.model === 'gemini-3.5-live-translate-preview';
+
+    const generationConfig: NonNullable<BidiContentSetup['setup']['generationConfig']> = {
+      responseModalities: isTranscribeOnly ? ['TEXT'] : ['AUDIO'],
+    };
+
+    if (!isTranscribeOnly) {
+      generationConfig.speechConfig = {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: this.settings.voice,
+          },
+        },
+      };
+    }
+
+    // Thinking configuration:
+    // IMPORTANT: gemini-3.8-live throws "Thinking level is not supported for this model" if thinkingConfig is sent.
+    // Only attach thinkingConfig for models that explicitly support thinking.
+    if (this.settings.model === 'gemini-3.8-live-extended-thinking') {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: 'high',
+      };
+    } else if (this.settings.model === 'gemini-3.1-flash-live-preview') {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: 'minimal',
+      };
+    }
+
+    // Translation configuration
+    if (isTranslate) {
+      generationConfig.translationConfig = {
+        targetLanguageCode: this.settings.targetLanguageCode || 'es',
+        echoTargetLanguage: true,
+      };
+    }
+
     const setupPayload: BidiContentSetup = {
       setup: {
         model: `models/${this.settings.model}`,
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: this.settings.voice,
-              },
-            },
-          },
-          thinkingConfig: {
-            thinkingLevel: 'minimal',
-          },
-        },
+        generationConfig,
         systemInstruction: {
           parts: [{ text: fullPrompt }],
         },
