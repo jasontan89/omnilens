@@ -175,6 +175,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [targetLanguageCode, setTargetLanguageCode] = useState(
     settings.targetLanguageCode || 'es'
   );
+  const [enableGoogleSearch, setEnableGoogleSearch] = useState<boolean>(
+    settings.enableGoogleSearch ?? true
+  );
   const [showKey, setShowKey] = useState(false);
   const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male'>('female');
   const [playingVoiceId, setPlayingVoiceId] = useState<GeminiVoice | null>(null);
@@ -225,6 +228,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       screenFps,
       customInstructions: customInstructions.trim(),
       targetLanguageCode,
+      enableGoogleSearch,
     });
     onClose();
   };
@@ -538,6 +542,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="text-[11px] text-gray-400 flex items-center justify-between">
               <span>{fpsInfo.label}</span>
               <span className="text-gray-500">Max width: 1024px JPEG</span>
+            </div>
+          </div>
+
+          {/* Grounding with Google Search (Live Web Data) */}
+          <div className="p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 space-y-2.5 transition-all">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                  enableGoogleSearch
+                    ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+                    : 'bg-gray-800 border-gray-700 text-gray-400'
+                }`}>
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-200">Grounding with Google Search</span>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                        enableGoogleSearch
+                          ? 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
+                          : 'bg-gray-800 text-gray-400 border-gray-700'
+                      }`}
+                    >
+                      {enableGoogleSearch ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Enables real-time online web searching during voice & screen conversations for current stock prices, live events, fresh news, and recent documentation.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enableGoogleSearch}
+                onClick={() => setEnableGoogleSearch(!enableGoogleSearch)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-cyan-500/40 ${
+                  enableGoogleSearch ? 'bg-cyan-600' : 'bg-gray-800'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    enableGoogleSearch ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="text-[10px] text-gray-500 pt-1.5 border-t border-gray-800/80 flex items-center justify-between">
+              <span>Tool: <code className="font-mono text-cyan-400">tools: [&#123; googleSearch: &#123;&#125; &#125;]</code></span>
+              <span className="text-gray-400">⚡ Grounding latency: ~500ms-1s on web queries</span>
             </div>
           </div>
 
