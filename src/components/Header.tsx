@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Languages,
   TrendingUp,
+  Globe,
 } from 'lucide-react';
 import type { ConnectionState, CopilotPersona, LiveModel } from '../types/live';
 
@@ -20,6 +21,7 @@ interface HeaderProps {
   errorMessage?: string;
   currentModel: LiveModel;
   currentPersona: CopilotPersona;
+  enableGoogleSearch?: boolean;
   onOpenSettings: () => void;
   onSelectPersona: (persona: CopilotPersona) => void;
 }
@@ -51,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   errorMessage,
   currentModel,
   currentPersona,
+  enableGoogleSearch,
   onOpenSettings,
   onSelectPersona,
 }) => {
@@ -149,6 +152,17 @@ export const Header: React.FC<HeaderProps> = ({
             ? '3.5 Translate'
             : '3.5 Transcribe'}
         </div>
+
+        {/* Live Search Grounding Badge */}
+        {enableGoogleSearch && currentModel !== 'gemini-3.5-transcribe-live' && (
+          <div
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 shadow-sm"
+            title="Grounding with Google Search is enabled for real-time web facts"
+          >
+            <Globe className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            <span>Web Grounded</span>
+          </div>
+        )}
 
         {/* Settings button */}
         <button

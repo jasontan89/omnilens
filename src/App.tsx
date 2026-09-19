@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS: SessionSettings = {
   screenFps: 1,
   customInstructions: '',
   targetLanguageCode: 'es',
+  enableGoogleSearch: true,
 };
 
 export const App: React.FC = () => {
@@ -378,6 +379,7 @@ export const App: React.FC = () => {
         errorMessage={errorMessage}
         currentModel={settings.model}
         currentPersona={settings.persona}
+        enableGoogleSearch={settings.enableGoogleSearch}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSelectPersona={handleSelectPersona}
       />
