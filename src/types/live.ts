@@ -35,6 +35,7 @@ export interface SessionSettings {
   screenFps: number; // 1 to 5 fps
   customInstructions?: string;
   targetLanguageCode?: string; // For live translation (e.g., 'es', 'fr', 'ja', 'zh')
+  enableGoogleSearch?: boolean; // Google Live Search Grounding for real-time web data
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -60,6 +61,11 @@ export interface ExtractedNote {
 export interface BidiContentSetup {
   setup: {
     model: string;
+    tools?: {
+      googleSearch?: Record<string, unknown>;
+      codeExecution?: Record<string, unknown>;
+      functionDeclarations?: unknown[];
+    }[];
     generationConfig?: {
       responseModalities?: ('AUDIO' | 'TEXT')[];
       speechConfig?: {

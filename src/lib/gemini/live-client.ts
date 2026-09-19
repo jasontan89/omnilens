@@ -163,6 +163,15 @@ export class GeminiLiveClient {
       },
     };
 
+    // Attach Google Search Grounding for live web information
+    if (this.settings.enableGoogleSearch && !isTranscribeOnly) {
+      setupPayload.setup.tools = [
+        {
+          googleSearch: {},
+        },
+      ];
+    }
+
     this.ws.send(JSON.stringify(setupPayload));
   }
 

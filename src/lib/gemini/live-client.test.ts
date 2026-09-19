@@ -177,6 +177,69 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
   });
 
+  it('attaches tools: [{ googleSearch: {} }] in setup message when enableGoogleSearch is true', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.tools).toEqual([{ googleSearch: {} }]);
+  });
+
+  it('omits tools property when enableGoogleSearch is false', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: false },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.tools).toBeUndefined();
+  });
+
+  it('omits googleSearch tools for transcribe-only model even if enableGoogleSearch is true', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, model: 'gemini-3.5-transcribe-live', enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
+    expect(setupMsg.setup.tools).toBeUndefined();
+  });
+
   it('waits for setupComplete handshake before enabling isConnected and sending realtimeInput', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
