@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS: SessionSettings = {
   voice: 'Aoede',
   screenFps: 1,
   customInstructions: '',
+  targetLanguageCode: 'es',
 };
 
 export const App: React.FC = () => {
@@ -74,6 +75,9 @@ export const App: React.FC = () => {
     if (liveClientRef.current) {
       liveClientRef.current.updateSettings(settings);
     }
+    if (screenCaptureRef.current) {
+      screenCaptureRef.current.setFps(settings.screenFps);
+    }
   }, [settings]);
 
   // Check if API key is set on first load
@@ -88,7 +92,6 @@ export const App: React.FC = () => {
     (sender: 'user' | 'gemini' | 'system', text: string) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        // If last message is from same sender within 2 seconds, group/append it for smooth reading
         if (last && last.sender === sender && Date.now() - last.timestamp.getTime() < 3500) {
           const updated = [...prev];
           updated[updated.length - 1] = {
@@ -112,6 +115,41 @@ export const App: React.FC = () => {
     []
   );
 
+  // Manual Note actions
+  const handleAddNote = useCallback((newNote: Omit<ExtractedNote, 'id' | 'timestamp'>) => {
+    setNotes((prev) => [
+      ...prev,
+      {
+        ...newNote,
+        id: Math.random().toString(36).substring(2, 9),
+        timestamp: new Date(),
+      },
+    ]);
+  }, []);
+
+  const handleDeleteNote = useCallback((id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const handleToggleCompleteNote = useCallback((id: string) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, completed: !n.completed } : n))
+    );
+  }, []);
+
+  const handleAddNoteFromMessage = useCallback((msg: TranscriptMessage) => {
+    const hasCode = msg.text.includes('```');
+    const isAction = /todo|action item|must|should|need to/i.test(msg.text);
+    const clean = msg.text.replace(/```[a-zA-Z]*\n?|```/g, '').trim();
+    const firstLine = clean.split('\n')[0].slice(0, 45) || (hasCode ? 'Code Snippet' : 'Note');
+    handleAddNote({
+      title: firstLine,
+      content: msg.text,
+      type: hasCode ? 'code-snippet' : isAction ? 'action-item' : 'key-insight',
+      completed: false,
+    });
+  }, [handleAddNote]);
+
   // Initialize Audio Player & Video Screen Capture instances
   useEffect(() => {
     pcmPlayerRef.current = new PcmPlayer();
@@ -124,7 +162,6 @@ export const App: React.FC = () => {
         }
       },
       () => {
-        // Stream ended (e.g. user clicked native stop button)
         setCaptureSource(null);
         setActiveStream(null);
       }
@@ -169,22 +206,51 @@ export const App: React.FC = () => {
       },
       onInputTranscription: (text) => {
         addTranscriptMessage('user', text);
+
+        // Heuristic: User speech asking to capture a note or todo
+        const lower = text.toLowerCase();
+        if (
+          lower.includes('take note') ||
+          lower.includes('action item') ||
+          lower.includes('todo') ||
+          lower.includes('remember this') ||
+          lower.startsWith('note:')
+        ) {
+          const cleanTitle = text
+            .replace(/^(take a? note(:|that)?|action item:?|todo:?|remember this(:|that)?|note:?)\s*/i, '')
+            .slice(0, 50)
+            .trim();
+
+          if (cleanTitle) {
+            handleAddNote({
+              title: cleanTitle,
+              content: text,
+              type: 'action-item',
+              completed: false,
+            });
+          }
+        }
       },
       onOutputTranscription: (text) => {
         addTranscriptMessage('gemini', text);
 
-        // Heuristic: Check if Gemini is recommending an action item or snippet
-        if (text.toLowerCase().includes('action item:') || text.toLowerCase().includes('todo:') || text.includes('```')) {
-          setNotes((prevNotes) => [
-            ...prevNotes,
-            {
-              id: Math.random().toString(36).substring(2, 9),
-              type: text.includes('```') ? 'code-snippet' : 'action-item',
-              title: text.slice(0, 40) + '...',
-              content: text,
-              timestamp: new Date(),
-            },
-          ]);
+        // Heuristic: Check if Gemini recommended an action item or code snippet
+        const lower = text.toLowerCase();
+        if (lower.includes('action item:') || lower.includes('todo:') || text.includes('```')) {
+          const hasCode = text.includes('```');
+          const cleanTitle = text
+            .replace(/```[a-zA-Z]*\n?|```/g, '')
+            .split('\n')[0]
+            .replace(/^(action item:?|todo:?)\s*/i, '')
+            .slice(0, 45)
+            .trim();
+
+          handleAddNote({
+            title: cleanTitle || (hasCode ? 'Code Snippet' : 'Action Item'),
+            content: text,
+            type: hasCode ? 'code-snippet' : 'action-item',
+            completed: false,
+          });
         }
       },
       onInterrupted: () => {
@@ -197,7 +263,7 @@ export const App: React.FC = () => {
 
     liveClientRef.current = client;
     return client;
-  }, [settings, addTranscriptMessage]);
+  }, [settings, addTranscriptMessage, handleAddNote]);
 
   // Start microphone capture
   const startAudioCapture = async () => {
@@ -299,22 +365,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Manual Note actions
-  const handleAddNote = (newNote: Omit<ExtractedNote, 'id' | 'timestamp'>) => {
-    setNotes((prev) => [
-      ...prev,
-      {
-        ...newNote,
-        id: Math.random().toString(36).substring(2, 9),
-        timestamp: new Date(),
-      },
-    ]);
-  };
-
-  const handleDeleteNote = (id: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== id));
-  };
-
   // Persona switch handler
   const handleSelectPersona = (persona: CopilotPersona) => {
     setSettings((prev) => ({ ...prev, persona }));
@@ -363,17 +413,20 @@ export const App: React.FC = () => {
             <div className="bg-gray-950/60 rounded-2xl border border-gray-800/80 p-4 text-xs space-y-2">
               <h4 className="font-semibold text-gray-300 flex items-center gap-1.5">
                 <span className="text-purple-400">💡</span>
-                How to use OmniLens:
+                Multimodal Copilot Tips:
               </h4>
               <ul className="text-gray-400 space-y-1.5 list-disc list-inside leading-relaxed text-[11px]">
                 <li>
                   Click <strong className="text-purple-300">Connect Live</strong> and talk to Gemini naturally with your microphone.
                 </li>
                 <li>
-                  Share your IDE or browser to ask <em className="text-gray-300">"Why is this test failing?"</em> or <em className="text-gray-300">"Explain this chart."</em>
+                  Say <em className="text-gray-300">"Take a note: optimize database query"</em> to auto-save to Action Items.
                 </li>
                 <li>
-                  Speak over Gemini at any time — Voice Activity Detection will interrupt playback instantly.
+                  Click <strong className="text-amber-300">Extract</strong> in the Notes tab to automatically parse the transcript for tasks.
+                </li>
+                <li>
+                  Use the <strong className="text-purple-300">FPS slider</strong> in Settings to balance visual smoothness vs token consumption.
                 </li>
               </ul>
             </div>
@@ -388,6 +441,7 @@ export const App: React.FC = () => {
                 addTranscriptMessage('user', text);
               }}
               onClearTranscript={() => setMessages([])}
+              onAddNoteFromMessage={handleAddNoteFromMessage}
               isConnected={connectionState === 'connected'}
             />
           </div>
@@ -399,6 +453,7 @@ export const App: React.FC = () => {
               messages={messages}
               onAddNote={handleAddNote}
               onDeleteNote={handleDeleteNote}
+              onToggleCompleteNote={handleToggleCompleteNote}
             />
           </div>
         </div>
