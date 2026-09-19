@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Key,
@@ -9,6 +9,14 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  Play,
+  Square,
+  Globe,
+  Languages,
+  Zap,
+  BrainCircuit,
+  MessageSquare,
+  HelpCircle,
 } from 'lucide-react';
 import type {
   CopilotPersona,
@@ -16,6 +24,11 @@ import type {
   LiveModel,
   SessionSettings,
 } from '../types/live';
+import {
+  VOICE_PROFILES,
+  playVoicePreview,
+  stopVoicePreview,
+} from '../lib/audio/voice-preview';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -24,12 +37,125 @@ interface SettingsModalProps {
   onSave: (newSettings: SessionSettings) => void;
 }
 
-const VOICES: { id: GeminiVoice; label: string; desc: string }[] = [
-  { id: 'Aoede', label: 'Aoede', desc: 'Warm, clear, and articulate' },
-  { id: 'Puck', label: 'Puck', desc: 'Energetic, witty, and friendly' },
-  { id: 'Charon', label: 'Charon', desc: 'Calm, deep, and authoritative' },
-  { id: 'Fenrir', label: 'Fenrir', desc: 'Direct, focused, and crisp' },
-  { id: 'Kore', label: 'Kore', desc: 'Gentle, soothing, and balanced' },
+const SUPPORTED_MODELS: {
+  id: LiveModel;
+  name: string;
+  badge: string;
+  badgeColor: string;
+  desc: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    id: 'gemini-3.1-flash-live-preview',
+    name: 'Gemini 3 Flash Live',
+    badge: 'Fast / Free Tier Safe',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    desc: 'Lowest latency for real-time speech and screen vision. Best for free quota (65k TPM).',
+    icon: <Zap className="w-4 h-4 text-emerald-400" />,
+  },
+  {
+    id: 'gemini-3.8-live',
+    name: 'Gemini 3.8 Live',
+    badge: 'Deep Reasoning',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    desc: 'Enhanced reasoning and nuanced code comprehension. Thinking level disabled for compatibility.',
+    icon: <Cpu className="w-4 h-4 text-purple-400" />,
+  },
+  {
+    id: 'gemini-3.8-live-extended-thinking',
+    name: 'Gemini 3.8 Live Extended Thinking',
+    badge: 'Maximum Cognitive Depth',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+    desc: 'High-level thinking enabled for complex architecture, algorithm verification, and deep puzzles.',
+    icon: <BrainCircuit className="w-4 h-4 text-indigo-400" />,
+  },
+  {
+    id: 'gemini-3.5-live-translate-preview',
+    name: 'Gemini 3.5 Live Translate',
+    badge: 'Real-Time Translation',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+    desc: 'Bilingual live speech interpreter. Speaks translated audio in your chosen target language.',
+    icon: <Languages className="w-4 h-4 text-cyan-400" />,
+  },
+  {
+    id: 'gemini-3.5-transcribe-live',
+    name: 'Gemini 3.5 Transcribe Live',
+    badge: 'Sub-Second Transcription',
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    desc: 'Ultra-fast speech-to-text without audio reply. Ideal for captioning and silent transcription.',
+    icon: <MessageSquare className="w-4 h-4 text-amber-400" />,
+  },
+];
+
+const TARGET_LANGUAGES = [
+  { code: 'es', label: 'Spanish (Español)' },
+  { code: 'fr', label: 'French (Français)' },
+  { code: 'de', label: 'German (Deutsch)' },
+  { code: 'ja', label: 'Japanese (日本語)' },
+  { code: 'zh', label: 'Mandarin Chinese (中文)' },
+  { code: 'ko', label: 'Korean (한국어)' },
+  { code: 'pt', label: 'Portuguese (Português)' },
+  { code: 'it', label: 'Italian (Italiano)' },
+  { code: 'hi', label: 'Hindi (हिन्दी)' },
+  { code: 'ar', label: 'Arabic (العربية)' },
+  { code: 'nl', label: 'Dutch (Nederlands)' },
+  { code: 'ru', label: 'Russian (Русский)' },
+];
+
+const PERSONA_TEMPLATES: {
+  persona: CopilotPersona;
+  label: string;
+  title: string;
+  samplePrompt: string;
+}[] = [
+  {
+    persona: 'pair-programmer',
+    label: 'Pair Programmer',
+    title: 'Senior Full-Stack Code Reviewer',
+    samplePrompt: 'Focus on spotting memory leaks, off-by-one errors, TypeScript strict typing improvements, and modern React patterns. Speak concisely and give direct line references.',
+  },
+  {
+    persona: 'system-design',
+    label: 'System Design Interviewer',
+    title: 'FAANG Principal Architect',
+    samplePrompt: 'Act as a Principal Engineer interviewing me on distributed systems. Question my choice of database, caching strategy, SPOF vulnerabilities, and horizontal scaling limits.',
+  },
+  {
+    persona: 'meeting-copilot',
+    label: 'Meeting Copilot',
+    title: 'Executive Assistant & Secretary',
+    samplePrompt: 'Listen to the meeting conversation and track action items, decisions made, and assigned deadlines. Format notes clearly with bullet points starting with "Action Item:".',
+  },
+  {
+    persona: 'study-tutor',
+    label: 'Study Tutor',
+    title: 'Socratic Math & Science Coach',
+    samplePrompt: 'Guide me step-by-step through calculations and problems visible on my screen. Do not give away the final answer immediately—prompt me to notice any mistakes in my logic.',
+  },
+  {
+    persona: 'legal-auditor',
+    label: 'Legal Auditor',
+    title: 'Contract & Risk Analyst',
+    samplePrompt: 'Scrutinize the contract on my screen for unfavorable indemnity, non-compete clauses, auto-renewal traps, or liability disclaimers. Flag risks in plain English.',
+  },
+  {
+    persona: 'language-tutor',
+    label: 'Language Tutor',
+    title: 'Conversational Fluency Coach',
+    samplePrompt: 'Converse with me in my target language. Provide natural phrasing alternatives and gently correct my pronunciation or grammatical mistakes.',
+  },
+  {
+    persona: 'financial-analyst',
+    label: 'Financial Analyst',
+    title: 'Wall Street Valuation Specialist',
+    samplePrompt: 'Examine earnings reports, balance sheets, and charts on screen. Highlight gross margin trends, debt coverage ratios, and cash flow anomalies.',
+  },
+  {
+    persona: 'general-assistant',
+    label: 'General Assistant',
+    title: 'Multimodal Companion',
+    samplePrompt: 'Be a friendly, quick, and witty assistant. Help me solve whatever is currently visible on my screen or camera.',
+  },
 ];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -42,16 +168,55 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [model, setModel] = useState<LiveModel>(settings.model);
   const [persona, setPersona] = useState<CopilotPersona>(settings.persona);
   const [voice, setVoice] = useState<GeminiVoice>(settings.voice);
-  const [screenFps, setScreenFps] = useState<number>(settings.screenFps);
+  const [screenFps, setScreenFps] = useState<number>(settings.screenFps || 1);
   const [customInstructions, setCustomInstructions] = useState(
     settings.customInstructions || ''
   );
+  const [targetLanguageCode, setTargetLanguageCode] = useState(
+    settings.targetLanguageCode || 'es'
+  );
   const [showKey, setShowKey] = useState(false);
+  const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male'>('female');
+  const [playingVoiceId, setPlayingVoiceId] = useState<GeminiVoice | null>(null);
+
+  // Stop any playing voice preview when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      stopVoicePreview();
+      setPlayingVoiceId(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
+  const handleVoicePreview = (voiceId: GeminiVoice, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (playingVoiceId === voiceId) {
+      stopVoicePreview();
+      setPlayingVoiceId(null);
+      return;
+    }
+
+    setPlayingVoiceId(voiceId);
+    playVoicePreview(voiceId, () => {
+      setPlayingVoiceId(null);
+    });
+  };
+
+  const handleSelectVoice = (voiceId: GeminiVoice) => {
+    setVoice(voiceId);
+    handleVoicePreview(voiceId);
+  };
+
+  const handleApplyPersonaTemplate = (tmpl: typeof PERSONA_TEMPLATES[0]) => {
+    setPersona(tmpl.persona);
+    setCustomInstructions(tmpl.samplePrompt);
+  };
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    stopVoicePreview();
     onSave({
       apiKey: apiKey.trim(),
       model,
@@ -59,29 +224,88 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       voice,
       screenFps,
       customInstructions: customInstructions.trim(),
+      targetLanguageCode,
     });
     onClose();
   };
 
+  const filteredVoices = VOICE_PROFILES.filter((v) => {
+    if (voiceGenderFilter === 'all') return true;
+    return v.gender === voiceGenderFilter;
+  });
+
+  // Calculate estimated token burn for FPS
+  const getFpsInfo = (fps: number) => {
+    switch (fps) {
+      case 1:
+        return {
+          rate: '~15,000 TPM',
+          label: 'Free Tier Recommended (Lowest token burn)',
+          color: 'text-emerald-400',
+          bg: 'bg-emerald-950/40 border-emerald-500/40',
+        };
+      case 2:
+        return {
+          rate: '~30,000 TPM',
+          label: 'Smooth UI & text reading',
+          color: 'text-blue-400',
+          bg: 'bg-blue-950/40 border-blue-500/40',
+        };
+      case 3:
+        return {
+          rate: '~45,000 TPM',
+          label: 'Fluid motion & code scrolling',
+          color: 'text-purple-400',
+          bg: 'bg-purple-950/40 border-purple-500/40',
+        };
+      case 4:
+        return {
+          rate: '~60,000 TPM',
+          label: 'Approaching free tier 65k limit',
+          color: 'text-amber-400',
+          bg: 'bg-amber-950/40 border-amber-500/40',
+        };
+      case 5:
+        return {
+          rate: '~75,000 TPM',
+          label: 'High speed (Best with paid Tier 1 API key)',
+          color: 'text-rose-400',
+          bg: 'bg-rose-950/40 border-rose-500/40',
+        };
+      default:
+        return { rate: '~15,000 TPM', label: '', color: 'text-gray-400', bg: 'bg-gray-900 border-gray-800' };
+    }
+  };
+
+  const fpsInfo = getFpsInfo(screenFps);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-gray-900/60">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-purple-400" />
-            <h2 className="text-sm font-semibold text-white">Copilot Settings</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-gray-900/70">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+              <Sliders className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Copilot Configuration</h2>
+              <p className="text-[11px] text-gray-400">Customize models, voice tones, screen FPS, and personas</p>
+            </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            onClick={() => {
+              stopVoicePreview();
+              onClose();
+            }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleFormSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
+        <form onSubmit={handleFormSubmit} className="p-5 overflow-y-auto space-y-5 text-xs">
           {/* API Key */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -95,7 +319,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 rel="noreferrer"
                 className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-0.5"
               >
-                <span>Get key from AI Studio</span>
+                <span>Get API key from Google AI Studio</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
@@ -105,7 +329,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="AIzaSy..."
-                className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2.5 pr-10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono"
+                className="w-full bg-gray-900/90 border border-gray-800 rounded-xl px-3 py-2.5 pr-10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono"
               />
               <button
                 type="button"
@@ -116,167 +340,278 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
             <p className="text-[11px] text-gray-500">
-              Stored exclusively in your local browser storage. Never sent to any 3rd-party server.
+              Stored locally in browser storage. Your key is never shared or transmitted to external servers.
             </p>
           </div>
 
           {/* Model Selection */}
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label className="font-semibold text-gray-300 flex items-center gap-1.5">
               <Cpu className="w-3.5 h-3.5 text-purple-400" />
-              Live Model
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setModel('gemini-3.1-flash-live-preview')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  model === 'gemini-3.1-flash-live-preview'
-                    ? 'bg-purple-950/40 border-purple-500 text-purple-200'
-                    : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
-                }`}
-              >
-                <div className="font-semibold text-xs text-white flex items-center gap-1">
-                  <span>Gemini 3 Flash Live</span>
-                  <Sparkles className="w-3 h-3 text-purple-400" />
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1 leading-snug">
-                  Fastest response, 65K TPM free quota, ideal for real-time speech.
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModel('gemini-3.8-live')}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  model === 'gemini-3.8-live'
-                    ? 'bg-purple-950/40 border-purple-500 text-purple-200'
-                    : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
-                }`}
-              >
-                <div className="font-semibold text-xs text-white">Gemini 3.8 Live</div>
-                <div className="text-[10px] text-gray-400 mt-1 leading-snug">
-                  Enhanced reasoning & deep comprehension across complex code.
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Persona Selection */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-gray-300">
-              Copilot Persona
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'pair-programmer', label: 'Pair Programmer' },
-                { id: 'meeting-copilot', label: 'Meeting Copilot' },
-                { id: 'study-tutor', label: 'Study Tutor' },
-                { id: 'general-assistant', label: 'General Assistant' },
-              ].map((p) => (
-                <button
-                  type="button"
-                  key={p.id}
-                  onClick={() => setPersona(p.id as CopilotPersona)}
-                  className={`py-2 px-3 rounded-lg border text-left text-xs font-medium transition-all ${
-                    persona === p.id
-                      ? 'bg-purple-600/30 border-purple-500 text-purple-200'
-                      : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Voice Selection */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-gray-300 flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5 text-purple-400" />
-              Voice Tone
+              Live AI Model Architecture
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {VOICES.map((v) => (
-                <button
-                  type="button"
-                  key={v.id}
-                  onClick={() => setVoice(v.id)}
-                  className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
-                    voice === v.id
-                      ? 'bg-purple-950/40 border-purple-500 text-purple-200'
-                      : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
-                  }`}
-                >
+              {SUPPORTED_MODELS.map((m) => {
+                const isSelected = model === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setModel(m.id)}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      isSelected
+                        ? 'bg-purple-950/40 border-purple-500 text-purple-100 shadow-md ring-1 ring-purple-500/50'
+                        : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <div className="font-semibold text-xs text-white flex items-center gap-1.5">
+                        {m.icon}
+                        <span>{m.name}</span>
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${m.badgeColor}`}>
+                        {m.badge}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 leading-snug mt-1">{m.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Target Language dropdown if Translate model is active */}
+            {model === 'gemini-3.5-live-translate-preview' && (
+              <div className="p-3 bg-cyan-950/30 border border-cyan-500/40 rounded-xl mt-2 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-cyan-400 shrink-0" />
                   <div>
-                    <div className="font-semibold text-xs text-white">{v.label}</div>
-                    <div className="text-[10px] text-gray-400">{v.desc}</div>
+                    <div className="font-medium text-xs text-cyan-200">Target Translation Language</div>
+                    <div className="text-[11px] text-cyan-300/70">Audio replies will be spoken in this language</div>
                   </div>
-                </button>
-              ))}
-            </div>
+                </div>
+                <select
+                  value={targetLanguageCode}
+                  onChange={(e) => setTargetLanguageCode(e.target.value)}
+                  className="bg-gray-900 border border-cyan-500/50 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+                >
+                  {TARGET_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
-          {/* Screen FPS (Token Saver) */}
-          <div className="space-y-1.5">
+          {/* Voice Tone with Female Tones & Audio Previews */}
+          <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="font-semibold text-gray-300">
-                Screen Stream Frame Rate
+              <label className="font-semibold text-gray-300 flex items-center gap-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                Voice Tone & Preview Sample
               </label>
-              <span className="text-[11px] font-mono text-purple-400">
-                {screenFps} FPS ({screenFps === 1 ? 'Free Tier Recommended' : 'Higher Smoothness'})
-              </span>
-            </div>
-            <div className="flex gap-2">
-              {[1, 2].map((fpsVal) => (
+              <div className="flex items-center gap-1 bg-gray-900 p-0.5 rounded-lg border border-gray-800 text-[11px]">
                 <button
                   type="button"
-                  key={fpsVal}
-                  onClick={() => setScreenFps(fpsVal)}
-                  className={`flex-1 py-2 rounded-lg border text-center font-medium transition-all ${
-                    screenFps === fpsVal
-                      ? 'bg-purple-600/30 border-purple-500 text-purple-200'
-                      : 'bg-gray-900 border-gray-800 text-gray-400 hover:border-gray-700'
+                  onClick={() => setVoiceGenderFilter('female')}
+                  className={`px-2.5 py-0.5 rounded-md transition-colors ${
+                    voiceGenderFilter === 'female'
+                      ? 'bg-purple-600/40 text-purple-200 font-semibold'
+                      : 'text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  {fpsVal} FPS
+                  Female (6 tones)
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setVoiceGenderFilter('male')}
+                  className={`px-2.5 py-0.5 rounded-md transition-colors ${
+                    voiceGenderFilter === 'male'
+                      ? 'bg-purple-600/40 text-purple-200 font-semibold'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Male (4 tones)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVoiceGenderFilter('all')}
+                  className={`px-2 py-0.5 rounded-md transition-colors ${
+                    voiceGenderFilter === 'all'
+                      ? 'bg-purple-600/40 text-purple-200 font-semibold'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+              </div>
             </div>
-            <p className="text-[10px] text-gray-500">
-              1 FPS conserves tokens so you stay comfortably within the 65,000 TPM limit.
-            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {filteredVoices.map((v) => {
+                const isSelected = voice === v.id;
+                const isPlaying = playingVoiceId === v.id;
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => handleSelectVoice(v.id)}
+                    className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                      isSelected
+                        ? 'bg-purple-950/40 border-purple-500 text-purple-200 ring-1 ring-purple-500/40'
+                        : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-xs text-white">{v.name}</span>
+                        <span
+                          className={`text-[9px] px-1 py-0.2 rounded font-mono ${
+                            v.gender === 'female'
+                              ? 'bg-pink-500/20 text-pink-300'
+                              : 'bg-blue-500/20 text-blue-300'
+                          }`}
+                        >
+                          {v.gender === 'female' ? 'Female' : 'Male'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-gray-400 truncate mt-0.5">{v.desc}</div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleVoicePreview(v.id, e)}
+                      className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                        isPlaying
+                          ? 'bg-purple-600 text-white border-purple-400 animate-pulse'
+                          : 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700'
+                      }`}
+                      title={isPlaying ? 'Stop sample' : 'Play voice sample'}
+                    >
+                      {isPlaying ? (
+                        <>
+                          <Square className="w-3 h-3 fill-current" />
+                          <span>Stop</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Sample</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Custom System Instruction */}
+          {/* Screen Stream Frame Rate Slider */}
+          <div className="space-y-2 p-3 bg-gray-900/50 rounded-xl border border-gray-800">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-gray-300 flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                Screen Stream Frame Rate (Slider)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-sm text-purple-300">{screenFps} FPS</span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${fpsInfo.bg} ${fpsInfo.color}`}>
+                  {fpsInfo.rate}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <span className="text-[11px] font-mono text-gray-500">1 FPS</span>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={screenFps}
+                onChange={(e) => setScreenFps(Number(e.target.value))}
+                className="flex-1 accent-purple-500 cursor-pointer h-2 bg-gray-800 rounded-lg"
+              />
+              <span className="text-[11px] font-mono text-gray-500">5 FPS</span>
+            </div>
+
+            <div className="text-[11px] text-gray-400 flex items-center justify-between">
+              <span>{fpsInfo.label}</span>
+              <span className="text-gray-500">Max width: 1024px JPEG</span>
+            </div>
+          </div>
+
+          {/* Persona Selection & Custom Examples */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-gray-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                Copilot Persona & Pre-Built Examples
+              </label>
+              <span className="text-[10px] text-purple-400">Click any card to auto-apply prompt</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {PERSONA_TEMPLATES.map((tmpl) => {
+                const isActive = persona === tmpl.persona;
+                return (
+                  <button
+                    key={tmpl.persona}
+                    type="button"
+                    onClick={() => handleApplyPersonaTemplate(tmpl)}
+                    className={`p-2 rounded-xl border text-left transition-all ${
+                      isActive
+                        ? 'bg-purple-600/30 border-purple-500 text-purple-200 ring-1 ring-purple-500/40'
+                        : 'bg-gray-900/60 border-gray-800 text-gray-400 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-[11px] text-white truncate">{tmpl.label}</div>
+                    <div className="text-[10px] text-gray-400 truncate">{tmpl.title}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom System Instruction Textarea */}
           <div className="space-y-1.5">
-            <label className="font-semibold text-gray-300">
-              Custom Persona Instructions (Optional)
+            <label className="font-semibold text-gray-300 flex items-center justify-between">
+              <span>Custom Persona Instructions</span>
+              <span className="text-[10px] text-gray-500 font-normal">Appended to system guidelines</span>
             </label>
             <textarea
               value={customInstructions}
               onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="e.g. You are helping me prepare for a Google software engineer system design interview..."
+              placeholder="e.g. Focus on distributed systems trade-offs and challenge my assumptions..."
               rows={2}
               className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
             />
           </div>
 
-          {/* Footer Buttons */}
-          <div className="pt-2 flex justify-end gap-2 border-t border-gray-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-gray-300 text-xs font-medium transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/40 transition-colors"
-            >
-              Save Settings
-            </button>
+          {/* Footer */}
+          <div className="pt-3 flex items-center justify-between border-t border-gray-800">
+            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>Settings save instantly in local storage</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  stopVoicePreview();
+                  onClose();
+                }}
+                className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-gray-300 text-xs font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/40 transition-colors"
+              >
+                Save Settings
+              </button>
+            </div>
           </div>
         </form>
       </div>
