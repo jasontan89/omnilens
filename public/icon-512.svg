@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="omniGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <linearGradient id="glowGrad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.3" />
+    </linearGradient>
+    <filter id="glow512" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background with dark sleek tint and subtle rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="#090a0f" />
+  <rect width="508" height="508" x="2" y="2" rx="110" fill="none" stroke="url(#omniGrad512)" stroke-width="4" stroke-opacity="0.35" />
+  
+  <!-- Outer Aura Ring -->
+  <circle cx="256" cy="256" r="168" stroke="url(#glowGrad512)" stroke-width="12" fill="none" filter="url(#glow512)" />
+  
+  <!-- Core Lens Ring -->
+  <circle cx="256" cy="256" r="150" stroke="url(#omniGrad512)" stroke-width="32" fill="none" />
+  
+  <!-- Optical Iris Shutter Blades -->
+  <circle cx="256" cy="256" r="92" stroke="#a855f7" stroke-width="6" stroke-dasharray="20 16" fill="none" opacity="0.8" />
+  
+  <!-- Central Pupil / AI Spark -->
+  <circle cx="256" cy="256" r="58" fill="url(#omniGrad512)" />
+  <circle cx="236" cy="236" r="16" fill="#ffffff" opacity="0.85" />
+  
+  <!-- 4 Directional Vision Focus Marks -->
+  <path d="M 256 56 L 256 84 M 256 428 L 256 456 M 56 256 L 84 256 M 428 256 L 456 256" stroke="url(#omniGrad512)" stroke-width="8" stroke-linecap="round" opacity="0.65" />
+</svg>
