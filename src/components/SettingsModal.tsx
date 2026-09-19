@@ -176,7 +176,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     settings.targetLanguageCode || 'es'
   );
   const [enableGoogleSearch, setEnableGoogleSearch] = useState<boolean>(
-    settings.enableGoogleSearch ?? true
+    settings.enableGoogleSearch ?? false
   );
   const [showKey, setShowKey] = useState(false);
   const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male'>('female');
@@ -570,7 +570,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    Enables real-time online web searching during voice & screen conversations for current stock prices, live events, fresh news, and recent documentation.
+                    Enables real-time online web searching during voice &amp; screen conversations for fresh facts and live documentation.
                   </p>
                 </div>
               </div>
@@ -593,9 +593,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
+            {enableGoogleSearch && (
+              <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-200/90 leading-relaxed">
+                <strong className="font-semibold text-amber-300">⚠️ Paid Tier Required:</strong> Grounding with Google Search is a billable feature ($35/1k queries). If your API key does not have a linked Google Cloud billing account, keeping this enabled will trigger a <em>"You exceeded your current quota"</em> error. Keep this disabled to use the 100% Free Tier.
+              </div>
+            )}
+
             <div className="text-[10px] text-gray-500 pt-1.5 border-t border-gray-800/80 flex items-center justify-between">
               <span>Tool: <code className="font-mono text-cyan-400">tools: [&#123; googleSearch: &#123;&#125; &#125;]</code></span>
-              <span className="text-gray-400">⚡ Grounding latency: ~500ms-1s on web queries</span>
+              <span className="text-gray-400">⚡ Grounding latency: ~500ms-1s</span>
             </div>
           </div>
 
