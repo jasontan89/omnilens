@@ -87,7 +87,7 @@ export class ScreenCapture {
       };
     }
 
-    const intervalMs = Math.max(500, Math.floor(1000 / fps));
+    const intervalMs = Math.max(200, Math.floor(1000 / Math.max(1, fps)));
     this.intervalId = window.setInterval(() => {
       this.captureFrame();
     }, intervalMs);
@@ -165,7 +165,7 @@ export class ScreenCapture {
   public setFps(fps: number): void {
     if (this.intervalId !== null && this.mediaStream) {
       clearInterval(this.intervalId);
-      const intervalMs = Math.max(500, Math.floor(1000 / fps));
+      const intervalMs = Math.max(200, Math.floor(1000 / Math.max(1, fps)));
       this.intervalId = window.setInterval(() => {
         this.captureFrame();
       }, intervalMs);

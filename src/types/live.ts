@@ -1,16 +1,40 @@
-export type LiveModel = 'gemini-3.1-flash-live-preview' | 'gemini-3.8-live';
+export type LiveModel =
+  | 'gemini-3.1-flash-live-preview'
+  | 'gemini-3.8-live'
+  | 'gemini-3.8-live-extended-thinking'
+  | 'gemini-3.5-live-translate-preview'
+  | 'gemini-3.5-transcribe-live';
 
-export type CopilotPersona = 'pair-programmer' | 'meeting-copilot' | 'study-tutor' | 'general-assistant';
+export type CopilotPersona =
+  | 'pair-programmer'
+  | 'meeting-copilot'
+  | 'study-tutor'
+  | 'general-assistant'
+  | 'system-design'
+  | 'legal-auditor'
+  | 'language-tutor'
+  | 'financial-analyst';
 
-export type GeminiVoice = 'Puck' | 'Charon' | 'Aoede' | 'Fenrir' | 'Kore';
+export type GeminiVoice =
+  | 'Aoede'
+  | 'Kore'
+  | 'Leda'
+  | 'Callirrhoe'
+  | 'Autonoe'
+  | 'Despina'
+  | 'Puck'
+  | 'Charon'
+  | 'Fenrir'
+  | 'Zephyr';
 
 export interface SessionSettings {
   apiKey: string;
   model: LiveModel;
   persona: CopilotPersona;
   voice: GeminiVoice;
-  screenFps: number; // 1 or 2 fps
+  screenFps: number; // 1 to 5 fps
   customInstructions?: string;
+  targetLanguageCode?: string; // For live translation (e.g., 'es', 'fr', 'ja', 'zh')
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -29,6 +53,7 @@ export interface ExtractedNote {
   title: string;
   content: string;
   timestamp: Date;
+  completed?: boolean;
 }
 
 // Gemini Live WebSocket message protocol interfaces
@@ -46,6 +71,10 @@ export interface BidiContentSetup {
       };
       thinkingConfig?: {
         thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
+      };
+      translationConfig?: {
+        targetLanguageCode: string;
+        echoTargetLanguage?: boolean;
       };
     };
     systemInstruction?: {
