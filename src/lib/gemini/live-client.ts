@@ -49,10 +49,42 @@ export class GeminiLiveClient {
   private callbacks: LiveClientCallbacks;
   private isConnected: boolean = false;
   private isSetupDone: boolean = false;
+  private lastSearchTimestamp: number = 0;
+
+  /** Minimum milliseconds between consecutive google_search invocations */
+  private static readonly SEARCH_COOLDOWN_MS = 5000;
 
   constructor(settings: SessionSettings, callbacks: LiveClientCallbacks) {
     this.settings = settings;
     this.callbacks = callbacks;
+  }
+
+  /**
+   * Detects queries that are obviously well-established facts and should NOT
+   * trigger a web search. This is a conservative safety net — the primary fix
+   * is the refined system prompt that trains the model's own judgment.
+   */
+  public isObviouslyStaticQuery(query: string): boolean {
+    const lower = query.toLowerCase().trim();
+
+    const staticPatterns = [
+      // Historical political figures ("first president of the USA")
+      /\b(first|second|third|\d+(?:st|nd|rd|th))\s+(president|king|queen|emperor|pharaoh|chancellor)\b/,
+      // Capital cities ("capital of France")
+      /\b(?:what is|what's) (?:the )?capital (?:of|city of)\b/,
+      // Well-known science / math constants
+      /\b(speed of light|planck'?s? constant|avogadro|pythagorean|boiling point|freezing point|melting point|gravitational constant)\b/,
+      // Historical events that will never change
+      /\b(world war\s*[i1](?![iv])|world war\s*(?:ii|2)|wwi{1,2}|ww[12]|civil war|american revolution|french revolution|renaissance|ancient (rome|greece|egypt))\b/,
+      // Definitions / explanations of stable concepts
+      /^(?:what is|what are|define|explain|describe|tell me about)\s+(?:a |an |the )?(photosynthesis|mitosis|meiosis|democracy|communism|capitalism|socialism|evolution|gravity|magnetism|osmosis|diffusion)\b/,
+      // Math operations / formulas
+      /^(?:what is|calculate|solve|compute)\s+\d+\s*[+\-*/×÷^]\s*\d+/,
+      // Programming / CS concepts
+      /\b(?:what is|explain|how does)\b.*\b(binary search|bubble sort|merge sort|linked list|hash map|recursion|big o|polymorphism|inheritance|encapsulation)\b/,
+    ];
+
+    return staticPatterns.some(pattern => pattern.test(lower));
   }
 
   public updateSettings(settings: SessionSettings): void {
@@ -201,11 +233,21 @@ export class GeminiLiveClient {
       const searchEngineDesc = this.settings.braveSearchApiKey
         ? 'Brave Search API + Gemini 3.1 Flash Lite'
         : 'Live Web Grounding + Gemini 3.1 Flash Lite';
-      promptWithSearch += `\n\n[Real-Time Date & Search Grounding via ${searchEngineDesc} Enabled]:
+      promptWithSearch += `\n\n[Real-Time Web Search Available via ${searchEngineDesc}]:
 - Current Real-World Date: ${currentDateStr} (Year ${currentYear}).
-- Your pre-training memory has an outdated knowledge cutoff.
-- Whenever answering questions about current events, recent developments, today's news, weather, sports scores, stock prices, technology releases, current officeholders, or facts that require real-time verification, you MUST invoke the \`google_search\` tool before answering.
-- Never guess or use outdated pre-training knowledge for time-sensitive queries; always verify using \`google_search\`.
+- You have a \`google_search\` tool available for looking up LIVE, time-sensitive information.
+- USE google_search ONLY when the answer genuinely depends on information that changes over time and your training data is likely outdated. Examples:
+  • Today's weather, live sports scores, current stock/crypto prices
+  • News events from the past 7 days
+  • Current software version numbers or release dates from this year
+  • People or officeholders who may have changed since your training cutoff
+- DO NOT use google_search for:
+  • Well-established historical facts (e.g., "first president of the USA", "when was WWII")
+  • Stable scientific or mathematical knowledge (e.g., "speed of light", "Pythagorean theorem")
+  • General knowledge that does not change (e.g., "capital of France", "what is photosynthesis")
+  • Programming concepts, algorithms, or language syntax
+  • Anything you can answer confidently from your training data
+- When in doubt, answer directly from your knowledge. Only search if you are genuinely uncertain whether facts may have changed since your training cutoff.
 - Once you receive the search output, answer the user conversationally and concisely using the retrieved facts.`;
     }
 
@@ -230,7 +272,7 @@ export class GeminiLiveClient {
             {
               name: 'google_search',
               description:
-                'Search the live web using Google Search via Gemini 3.1 Flash Lite to retrieve real-time facts, current news, sports scores, weather, stock quotes, documentation, or online information.',
+                'Search the live web for REAL-TIME or RAPIDLY-CHANGING information ONLY. Use for: current news (past 7 days), live weather, today\'s stock prices, live sports scores, or very recent events. Do NOT use for historical facts, stable science, math, general knowledge, or well-known information that does not change.',
               parameters: {
                 type: 'OBJECT',
                 properties: {
@@ -362,12 +404,41 @@ export class GeminiLiveClient {
     for (const call of functionCalls) {
       if (call.name === 'google_search') {
         const query = (call.args?.query as string) || '';
+
+        // Client-side guard: skip search for obviously static/historical knowledge
+        if (this.isObviouslyStaticQuery(query)) {
+          console.log(`[SearchGuard] Skipped search for static query: "${query}"`);
+          responses.push({
+            id: call.id,
+            name: call.name,
+            response: {
+              output: 'This is well-established knowledge that does not change. Please answer directly from your own training data without searching.',
+            },
+          });
+          continue;
+        }
+
+        // Cooldown: prevent rapid-fire consecutive searches
+        const now = Date.now();
+        if (now - this.lastSearchTimestamp < GeminiLiveClient.SEARCH_COOLDOWN_MS) {
+          console.log(`[SearchCooldown] Skipped search within ${GeminiLiveClient.SEARCH_COOLDOWN_MS}ms cooldown: "${query}"`);
+          responses.push({
+            id: call.id,
+            name: call.name,
+            response: {
+              output: 'A search was just performed. Please answer this follow-up using the previous search results or your own knowledge.',
+            },
+          });
+          continue;
+        }
+
         this.callbacks.onSearchStatus?.('searching', { query });
 
         try {
           const result = await performGroundedSearch(query, this.settings.apiKey, {
             braveApiKey: this.settings.braveSearchApiKey,
           });
+          this.lastSearchTimestamp = Date.now();
           this.callbacks.onSearchStatus?.('grounded', {
             query,
             sources: result.sources,

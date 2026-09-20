@@ -200,7 +200,11 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.tools).toBeDefined();
     expect(setupMsg.setup.tools[0].functionDeclarations).toBeDefined();
     expect(setupMsg.setup.tools[0].functionDeclarations[0].name).toBe('google_search');
+    expect(setupMsg.setup.tools[0].functionDeclarations[0].description).toContain('REAL-TIME or RAPIDLY-CHANGING');
+    expect(setupMsg.setup.tools[0].functionDeclarations[0].description).toContain('Do NOT use for historical facts');
     expect(setupMsg.setup.systemInstruction.parts[0].text).toContain('google_search');
+    expect(setupMsg.setup.systemInstruction.parts[0].text).toContain('DO NOT use google_search for');
+    expect(setupMsg.setup.systemInstruction.parts[0].text).toContain('Well-established historical facts');
   });
 
   it('omits tools property when enableGoogleSearch is false', async () => {
@@ -502,6 +506,184 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
       'error',
       expect.stringContaining('Quota Exceeded: You have reached your current Google Gemini rate limit')
+    );
+  });
+
+  describe('isObviouslyStaticQuery - Static Knowledge Guard', () => {
+    const client = new GeminiLiveClient(testSettings, {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    });
+
+    it.each([
+      'Who was the first president of the USA',
+      'who was the first president of the united states',
+      'What is the capital of France',
+      "what's the capital of Japan",
+      'speed of light in vacuum',
+      'Explain the Pythagorean theorem',
+      'What is photosynthesis',
+      'Tell me about the French Revolution',
+      'World War 2 timeline',
+      'What is binary search',
+      'explain recursion in programming',
+      'What is 2 + 2',
+      'calculate 15 * 7',
+      'explain how does a linked list work',
+      'what is democracy',
+      'define osmosis',
+      'Who was the 16th president',
+      'ancient Rome history',
+    ])('returns true for static query: "%s"', (query) => {
+      expect(client.isObviouslyStaticQuery(query)).toBe(true);
+    });
+
+    it.each([
+      'weather in Singapore today',
+      'latest news about AI',
+      'current stock price of NVIDIA',
+      'Who won the NBA game last night',
+      'What is the latest version of React',
+      'news today',
+      'current president of the United States',
+      'bitcoin price right now',
+      'Is it going to rain tomorrow in Tokyo',
+      'how tall is the Eiffel Tower',
+      'best restaurants near me',
+    ])('returns false for time-sensitive or non-matching query: "%s"', (query) => {
+      expect(client.isObviouslyStaticQuery(query)).toBe(false);
+    });
+  });
+
+  it('short-circuits google_search tool call for static queries without invoking performGroundedSearch', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+      onSearchStatus: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    mockWsInstance.triggerMessage({ setupComplete: {} });
+
+    // Server sends toolCall for a static/historical query
+    mockWsInstance.triggerMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call_static_history',
+            name: 'google_search',
+            args: { query: 'Who was the first president of the USA' },
+          },
+        ],
+      },
+    });
+
+    // Wait for async handling
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Should NOT have called fetch (no search performed)
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Should NOT have triggered searching status (skipped entirely)
+    expect(callbacks.onSearchStatus).not.toHaveBeenCalledWith(
+      'searching',
+      expect.anything()
+    );
+
+    // Should have sent a toolResponse telling the model to answer from knowledge
+    const lastSent = JSON.parse(mockWsInstance.sentMessages[mockWsInstance.sentMessages.length - 1]);
+    expect(lastSent.toolResponse).toBeDefined();
+    expect(lastSent.toolResponse.functionResponses[0].response.output).toContain(
+      'well-established knowledge'
+    );
+  });
+
+  it('enforces search cooldown between consecutive google_search calls', async () => {
+    const mockSearchResponse = {
+      candidates: [
+        {
+          content: { parts: [{ text: 'Bitcoin is at $95,000.' }] },
+          groundingMetadata: { groundingChunks: [] },
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResponse,
+    });
+    globalThis.fetch = fetchMock;
+
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+      onSearchStatus: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    mockWsInstance.triggerMessage({ setupComplete: {} });
+
+    // First search should go through
+    mockWsInstance.triggerMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call_1',
+            name: 'google_search',
+            args: { query: 'bitcoin price today' },
+          },
+        ],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock).toHaveBeenCalled();
+
+    // Second search immediately after should be throttled by cooldown
+    fetchMock.mockClear();
+    mockWsInstance.triggerMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call_2',
+            name: 'google_search',
+            args: { query: 'ethereum price today' },
+          },
+        ],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // fetch should NOT have been called for the second search
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // toolResponse should tell model to use previous results
+    const lastSent = JSON.parse(mockWsInstance.sentMessages[mockWsInstance.sentMessages.length - 1]);
+    expect(lastSent.toolResponse.functionResponses[0].response.output).toContain(
+      'search was just performed'
     );
   });
 });

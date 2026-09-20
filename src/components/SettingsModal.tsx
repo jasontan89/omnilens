@@ -575,7 +575,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    Enables real-time online web searching during voice &amp; screen conversations for fresh facts and live data.
+                    Enables real-time web search for time-sensitive queries (news, weather, stock prices, live scores). General and historical knowledge is answered directly by the model.
                   </p>
                 </div>
               </div>
