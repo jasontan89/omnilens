@@ -8,20 +8,23 @@ import {
   VolumeX,
   PhoneCall,
   PhoneOff,
+  SwitchCamera,
 } from 'lucide-react';
 import type { ConnectionState } from '../types/live';
-import type { CaptureSource } from '../lib/video/screen-capture';
+import type { CaptureSource, CameraFacingMode } from '../lib/video/screen-capture';
 
 interface ControlBarProps {
   connectionState: ConnectionState;
   isMicMuted: boolean;
   isSpeakerMuted: boolean;
   captureSource: CaptureSource;
+  facingMode?: CameraFacingMode;
   onToggleConnect: () => void;
   onToggleMic: () => void;
   onToggleSpeaker: () => void;
   onToggleScreen: () => void;
   onToggleCamera: () => void;
+  onFlipCamera?: () => void;
 }
 
 export const ControlBar: React.FC<ControlBarProps> = ({
@@ -29,16 +32,18 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   isMicMuted,
   isSpeakerMuted,
   captureSource,
+  facingMode = 'user',
   onToggleConnect,
   onToggleMic,
   onToggleSpeaker,
   onToggleScreen,
   onToggleCamera,
+  onFlipCamera,
 }) => {
   const isConnected = connectionState === 'connected';
 
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-gray-950/90 border border-gray-800 shadow-2xl backdrop-blur-xl">
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2.5 rounded-2xl bg-gray-950/90 border border-gray-800 shadow-2xl backdrop-blur-xl max-w-[95vw] overflow-x-auto">
       {/* Microphone toggle */}
       <button
         onClick={onToggleMic}
@@ -86,6 +91,17 @@ export const ControlBar: React.FC<ControlBarProps> = ({
       >
         <Camera className="w-5 h-5" />
       </button>
+
+      {/* Flip Camera button (Visible when camera is active) */}
+      {captureSource === 'camera' && onFlipCamera && (
+        <button
+          onClick={onFlipCamera}
+          className="p-3 rounded-xl flex items-center justify-center bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 transition-all shadow-md active:scale-95"
+          title={`Flip camera (Currently: ${facingMode === 'environment' ? 'Rear' : 'Front'})`}
+        >
+          <SwitchCamera className="w-5 h-5 text-purple-300 animate-spin-once" />
+        </button>
+      )}
 
       {/* Speaker mute toggle */}
       <button
