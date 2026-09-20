@@ -178,7 +178,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [enableGoogleSearch, setEnableGoogleSearch] = useState<boolean>(
     settings.enableGoogleSearch ?? false
   );
+  const [braveSearchApiKey, setBraveSearchApiKey] = useState(
+    settings.braveSearchApiKey || ''
+  );
   const [showKey, setShowKey] = useState(false);
+  const [showBraveKey, setShowBraveKey] = useState(false);
   const [voiceGenderFilter, setVoiceGenderFilter] = useState<'all' | 'female' | 'male'>('female');
   const [playingVoiceId, setPlayingVoiceId] = useState<GeminiVoice | null>(null);
 
@@ -229,6 +233,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       customInstructions: customInstructions.trim(),
       targetLanguageCode,
       enableGoogleSearch,
+      braveSearchApiKey: braveSearchApiKey.trim(),
     });
     onClose();
   };
@@ -545,24 +550,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Grounding with Google Search (Live Web Data) */}
+          {/* Grounding with Brave Search / Live Web Data */}
           <div className="p-3.5 bg-gray-900/60 rounded-xl border border-gray-800 space-y-2.5 transition-all">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-start gap-2.5">
                 <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
                   enableGoogleSearch
-                    ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+                    ? 'bg-orange-500/20 border-orange-500/40 text-orange-300'
                     : 'bg-gray-800 border-gray-700 text-gray-400'
                 }`}>
                   <Globe className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-gray-200">Grounding with Google Search</span>
+                    <span className="font-semibold text-gray-200">Live Search Grounding</span>
                     <span
                       className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors ${
                         enableGoogleSearch
-                          ? 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
+                          ? 'bg-orange-950/60 text-orange-300 border-orange-500/40'
                           : 'bg-gray-800 text-gray-400 border-gray-700'
                       }`}
                     >
@@ -570,7 +575,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    Enables real-time online web searching during voice &amp; screen conversations for fresh facts and live documentation.
+                    Enables real-time online web searching during voice &amp; screen conversations for fresh facts and live data.
                   </p>
                 </div>
               </div>
@@ -581,8 +586,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 role="switch"
                 aria-checked={enableGoogleSearch}
                 onClick={() => setEnableGoogleSearch(!enableGoogleSearch)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-cyan-500/40 ${
-                  enableGoogleSearch ? 'bg-cyan-600' : 'bg-gray-800'
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-500/40 ${
+                  enableGoogleSearch ? 'bg-orange-600' : 'bg-gray-800'
                 }`}
               >
                 <span
@@ -594,19 +599,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {enableGoogleSearch && (
-              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] text-emerald-200/90 leading-relaxed space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  100% Free Tier Compatible (500 free searches / day)
+              <div className="space-y-3 pt-2 border-t border-gray-800/80 animate-in fade-in duration-200">
+                <div className="p-2.5 rounded-lg bg-orange-950/30 border border-orange-500/30 text-[11px] text-orange-200/90 leading-relaxed space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-orange-300">
+                    <Sparkles className="w-3.5 h-3.5 text-orange-400" />
+                    Brave Search API + Gemini 3.1 Flash Lite Grounding
+                  </div>
+                  <div>
+                    Retrieves fresh web results via <strong className="text-white font-medium">Brave Search</strong> and synthesizes concise voice responses via <strong className="text-white font-medium">Gemini 3.1 Flash Lite</strong> (fallback to Gemini 3.5 Flash Lite), preventing outdated answers.
+                  </div>
                 </div>
-                <div>
-                  Search requests are executed via <strong className="text-white font-medium">Gemini 3.1 Flash Lite</strong> (fallback to <strong className="text-white font-medium">Gemini 3.5 Flash Lite</strong>) via client-side function calling. This avoids the Live WebSocket billing restriction and works smoothly on standard Google AI Studio free keys without quota errors.
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-gray-300 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-orange-400" />
+                      Brave Search API Key
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                        2,000 Free Queries/Mo
+                      </span>
+                    </label>
+                    <a
+                      href="https://brave.com/search/api/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-orange-400 hover:text-orange-300 flex items-center gap-0.5"
+                    >
+                      <span>Get Free Brave Key</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type={showBraveKey ? 'text' : 'password'}
+                      value={braveSearchApiKey}
+                      onChange={(e) => setBraveSearchApiKey(e.target.value)}
+                      placeholder="BSA..."
+                      className="w-full bg-gray-900/90 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowBraveKey(!showBraveKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                    >
+                      {showBraveKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400">
+                    {braveSearchApiKey.trim() ? (
+                      <span className="text-emerald-400 font-medium">✓ Brave Search active for real-time web &amp; news results.</span>
+                    ) : (
+                      <span>Optional. If empty, OmniLens automatically falls back to free Open-Meteo weather and Wikipedia extracts with zero API key needed.</span>
+                    )}
+                  </p>
                 </div>
               </div>
             )}
 
             <div className="text-[10px] text-gray-500 pt-1.5 border-t border-gray-800/80 flex items-center justify-between">
-              <span>Engine: <code className="font-mono text-cyan-400">Gemini 3.1 &amp; 3.5 Flash Lite Grounding</code></span>
+              <span>Engine: <code className="font-mono text-orange-400">Brave Search &amp; Gemini 3.1 Flash Lite</code></span>
               <span className="text-emerald-400 font-medium flex items-center gap-1">⚡ Free Tier Ready</span>
             </div>
           </div>
