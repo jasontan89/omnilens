@@ -48,6 +48,8 @@ export interface TranscriptMessage {
   text: string;
   timestamp: Date;
   isPartial?: boolean;
+  searchSources?: { title: string; uri: string }[];
+  searchQuery?: string;
 }
 
 export interface ExtractedNote {
@@ -109,6 +111,24 @@ export interface BidiRealtimeInput {
   };
 }
 
+export interface BidiFunctionCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface BidiFunctionResponse {
+  id: string;
+  name: string;
+  response: Record<string, unknown>;
+}
+
+export interface BidiToolResponse {
+  toolResponse: {
+    functionResponses: BidiFunctionResponse[];
+  };
+}
+
 export interface BidiServerMessage {
   setupComplete?: Record<string, unknown>;
   serverContent?: {
@@ -129,5 +149,11 @@ export interface BidiServerMessage {
     outputTranscription?: {
       text: string;
     };
+  };
+  toolCall?: {
+    functionCalls: BidiFunctionCall[];
+  };
+  toolCallCancellation?: {
+    ids: string[];
   };
 }

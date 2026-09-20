@@ -134,7 +134,7 @@ export class ScreenCapture {
         this.currentSource = 'camera';
         this.setupStream(fps);
         return this.mediaStream;
-      } catch (fallbackErr) {
+      } catch {
         this.stop();
         throw err;
       }

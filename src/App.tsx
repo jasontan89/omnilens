@@ -99,6 +99,8 @@ export const App: React.FC = () => {
   // Transcript & Notes state
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [notes, setNotes] = useState<ExtractedNote[]>([]);
+  const [isSearchingGoogle, setIsSearchingGoogle] = useState<boolean>(false);
+  const [currentSearchQuery, setCurrentSearchQuery] = useState<string>('');
 
   // Subsystem Refs
   const liveClientRef = useRef<GeminiLiveClient | null>(null);
@@ -126,10 +128,21 @@ export const App: React.FC = () => {
 
   // Add a new message or update partial
   const addTranscriptMessage = useCallback(
-    (sender: 'user' | 'gemini' | 'system', text: string) => {
+    (
+      sender: 'user' | 'gemini' | 'system',
+      text: string,
+      searchSources?: { title: string; uri: string }[],
+      searchQuery?: string
+    ) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        if (last && last.sender === sender && Date.now() - last.timestamp.getTime() < 3500) {
+        if (
+          !searchSources &&
+          sender !== 'system' &&
+          last &&
+          last.sender === sender &&
+          Date.now() - last.timestamp.getTime() < 3500
+        ) {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...last,
@@ -145,6 +158,8 @@ export const App: React.FC = () => {
             sender,
             text,
             timestamp: new Date(),
+            searchSources,
+            searchQuery,
           },
         ];
       });
@@ -233,6 +248,7 @@ export const App: React.FC = () => {
         } else if (state === 'disconnected') {
           stopAudioCapture();
           setUserAnalyser(null);
+          setIsSearchingGoogle(false);
         }
       },
       onAudioChunk: (base64Pcm) => {
@@ -295,6 +311,24 @@ export const App: React.FC = () => {
       },
       onTurnComplete: () => {
         // Turn completed
+      },
+      onSearchStatus: (status, data) => {
+        if (status === 'searching') {
+          setIsSearchingGoogle(true);
+          setCurrentSearchQuery(data?.query || '');
+        } else if (status === 'grounded') {
+          setIsSearchingGoogle(false);
+          if (data?.query) {
+            addTranscriptMessage(
+              'system',
+              `🔍 Grounded with Google Search (Gemini 3.1 Flash Lite): "${data.query}"`,
+              data.sources,
+              data.query
+            );
+          }
+        } else if (status === 'error') {
+          setIsSearchingGoogle(false);
+        }
       },
     });
 
@@ -451,6 +485,8 @@ export const App: React.FC = () => {
         currentModel={settings.model}
         currentPersona={settings.persona}
         enableGoogleSearch={settings.enableGoogleSearch}
+        isSearchingGoogle={isSearchingGoogle}
+        searchQuery={currentSearchQuery}
         canInstallPwa={!!installPrompt}
         onInstallPwa={handleInstallPwa}
         onOpenSettings={() => setIsSettingsOpen(true)}

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Bot, User, Sparkles, Send, Copy, Check, Trash2, BookmarkPlus } from 'lucide-react';
+import { Bot, User, Sparkles, Send, Copy, Check, Trash2, BookmarkPlus, Globe, ExternalLink } from 'lucide-react';
 import type { TranscriptMessage } from '../types/live';
 
 interface TranscriptViewProps {
@@ -120,13 +120,19 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                       ? 'bg-blue-600 text-white'
                       : msg.sender === 'gemini'
                       ? 'bg-gradient-to-tr from-purple-600 to-pink-600 text-white'
+                      : msg.searchSources
+                      ? 'bg-cyan-900/80 text-cyan-300 border border-cyan-700/50'
                       : 'bg-gray-800 text-gray-400'
                   }`}
                 >
                   {msg.sender === 'user' ? (
                     <User className="w-3.5 h-3.5" />
-                  ) : (
+                  ) : msg.sender === 'gemini' ? (
                     <Bot className="w-3.5 h-3.5" />
+                  ) : msg.searchSources ? (
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                   )}
                 </div>
 
@@ -135,12 +141,16 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                   className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed relative ${
                     msg.sender === 'user'
                       ? 'bg-blue-600/90 text-white rounded-tr-none'
-                      : 'bg-gray-900/90 text-gray-200 border border-gray-800 rounded-tl-none'
+                      : msg.sender === 'gemini'
+                      ? 'bg-gray-900/90 text-gray-200 border border-gray-800 rounded-tl-none'
+                      : msg.searchSources
+                      ? 'bg-cyan-950/40 text-cyan-100 border border-cyan-800/60 rounded-tl-none'
+                      : 'bg-gray-900/60 text-gray-300 border border-gray-800/60 rounded-tl-none italic text-[11px]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3 mb-1 text-[10px] opacity-70">
                     <span className="font-semibold">
-                      {msg.sender === 'user' ? 'You' : 'Gemini'}
+                      {msg.sender === 'user' ? 'You' : msg.sender === 'gemini' ? 'Gemini' : 'OmniLens Grounding'}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
@@ -167,6 +177,28 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                   <div className="whitespace-pre-wrap select-text font-sans">
                     {msg.text}
                   </div>
+
+                  {/* Search Grounding Sources */}
+                  {msg.searchSources && msg.searchSources.length > 0 && (
+                    <div className="mt-2.5 pt-2 border-t border-cyan-500/20 flex flex-wrap items-center gap-1.5 not-italic">
+                      <span className="text-[10px] text-cyan-300 font-semibold flex items-center gap-1">
+                        <Globe className="w-3 h-3 text-cyan-400" />
+                        Web Sources:
+                      </span>
+                      {msg.searchSources.map((src, i) => (
+                        <a
+                          key={i}
+                          href={src.uri}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-100 bg-cyan-900/50 hover:bg-cyan-800/70 px-2 py-0.5 rounded border border-cyan-700/50 transition-colors"
+                        >
+                          <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                          <span className="max-w-[140px] truncate">{src.title}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

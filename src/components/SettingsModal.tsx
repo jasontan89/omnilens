@@ -594,14 +594,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {enableGoogleSearch && (
-              <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-200/90 leading-relaxed">
-                <strong className="font-semibold text-amber-300">⚠️ Paid Tier Required:</strong> Grounding with Google Search is a billable feature ($35/1k queries). If your API key does not have a linked Google Cloud billing account, keeping this enabled will trigger a <em>"You exceeded your current quota"</em> error. Keep this disabled to use the 100% Free Tier.
+              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] text-emerald-200/90 leading-relaxed space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-emerald-300">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  100% Free Tier Compatible (500 free searches / day)
+                </div>
+                <div>
+                  Search requests are executed via <strong className="text-white font-medium">Gemini 3.1 Flash Lite</strong> (fallback to <strong className="text-white font-medium">Gemini 3.5 Flash Lite</strong>) via client-side function calling. This avoids the Live WebSocket billing restriction and works smoothly on standard Google AI Studio free keys without quota errors.
+                </div>
               </div>
             )}
 
             <div className="text-[10px] text-gray-500 pt-1.5 border-t border-gray-800/80 flex items-center justify-between">
-              <span>Tool: <code className="font-mono text-cyan-400">tools: [&#123; googleSearch: &#123;&#125; &#125;]</code></span>
-              <span className="text-gray-400">⚡ Grounding latency: ~500ms-1s</span>
+              <span>Engine: <code className="font-mono text-cyan-400">Gemini 3.1 &amp; 3.5 Flash Lite Grounding</code></span>
+              <span className="text-emerald-400 font-medium flex items-center gap-1">⚡ Free Tier Ready</span>
             </div>
           </div>
 

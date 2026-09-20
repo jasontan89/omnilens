@@ -23,6 +23,8 @@ interface HeaderProps {
   currentModel: LiveModel;
   currentPersona: CopilotPersona;
   enableGoogleSearch?: boolean;
+  isSearchingGoogle?: boolean;
+  searchQuery?: string;
   canInstallPwa?: boolean;
   onInstallPwa?: () => void;
   onOpenSettings: () => void;
@@ -58,6 +60,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentModel,
   currentPersona,
   enableGoogleSearch,
+  isSearchingGoogle,
+  searchQuery,
   canInstallPwa,
   onInstallPwa,
   onOpenSettings,
@@ -163,11 +167,19 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Live Search Grounding Badge */}
         {enableGoogleSearch && currentModel !== 'gemini-3.5-transcribe-live' && (
           <div
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 shadow-sm"
-            title="Grounding with Google Search is enabled for real-time web facts"
+            className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-all ${
+              isSearchingGoogle
+                ? 'bg-cyan-950/80 border-cyan-400 text-cyan-200 animate-pulse ring-1 ring-cyan-500/30'
+                : 'bg-cyan-950/40 border-cyan-800/50 text-cyan-300'
+            }`}
+            title={
+              isSearchingGoogle
+                ? `Searching Google via Gemini 3.1 Flash Lite${searchQuery ? `: "${searchQuery}"` : '...'}`
+                : 'Grounding with Google Search enabled (Gemini 3.1 & 3.5 Flash Lite Free Tier)'
+            }
           >
-            <Globe className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-            <span>Web Grounded</span>
+            <Globe className={`w-3.5 h-3.5 text-cyan-400 ${isSearchingGoogle ? 'animate-spin' : 'animate-pulse'}`} />
+            <span>{isSearchingGoogle ? 'Searching Google...' : '3.1 Flash Lite Grounded'}</span>
           </div>
         )}
 

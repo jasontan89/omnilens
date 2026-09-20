@@ -45,6 +45,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     vi.stubGlobal('WebSocket', class extends MockWebSocket {
       constructor(url: string) {
         super(url);
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         mockWsInstance = this;
       }
     });
@@ -178,7 +179,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.thinkingConfig).toBeUndefined();
   });
 
-  it('attaches tools: [{ googleSearch: {} }] in setup message when enableGoogleSearch is true', async () => {
+  it('attaches functionDeclarations with google_search in setup message when enableGoogleSearch is true', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
       onAudioChunk: vi.fn(),
@@ -196,7 +197,10 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const setupMsg = JSON.parse(mockWsInstance.sentMessages[0]);
-    expect(setupMsg.setup.tools).toEqual([{ googleSearch: {} }]);
+    expect(setupMsg.setup.tools).toBeDefined();
+    expect(setupMsg.setup.tools[0].functionDeclarations).toBeDefined();
+    expect(setupMsg.setup.tools[0].functionDeclarations[0].name).toBe('google_search');
+    expect(setupMsg.setup.systemInstruction.parts[0].text).toContain('google_search');
   });
 
   it('omits tools property when enableGoogleSearch is false', async () => {
@@ -406,7 +410,76 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(callbacks.onInterrupted).toHaveBeenCalled();
   });
 
-  it('handles quota rejection when Google Search Grounding is enabled and advises disabling search', async () => {
+  it('handles incoming toolCall for google_search, invokes search grounding, and replies with toolResponse', async () => {
+    const mockSearchResponse = {
+      candidates: [
+        {
+          content: { parts: [{ text: 'The current temperature in Paris is 18°C.' }] },
+          groundingMetadata: {
+            groundingChunks: [{ web: { title: 'Meteo Paris', uri: 'https://parisweather.com' } }],
+          },
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResponse,
+    });
+    globalThis.fetch = fetchMock;
+
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+      onSearchStatus: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(
+      { ...testSettings, enableGoogleSearch: true },
+      callbacks
+    );
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    mockWsInstance.triggerMessage({ setupComplete: {} });
+
+    // Server sends toolCall for google_search
+    mockWsInstance.triggerMessage({
+      toolCall: {
+        functionCalls: [
+          {
+            id: 'call_paris_weather',
+            name: 'google_search',
+            args: { query: 'Paris weather today' },
+          },
+        ],
+      },
+    });
+
+    // Wait for search-grounding async execution
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Verify search status callbacks
+    expect(callbacks.onSearchStatus).toHaveBeenCalledWith('searching', { query: 'Paris weather today' });
+    expect(callbacks.onSearchStatus).toHaveBeenCalledWith('grounded', {
+      query: 'Paris weather today',
+      sources: [{ title: 'Meteo Paris', uri: 'https://parisweather.com' }],
+    });
+
+    // Verify toolResponse was sent back over WebSocket
+    const lastSent = JSON.parse(mockWsInstance.sentMessages[mockWsInstance.sentMessages.length - 1]);
+    expect(lastSent.toolResponse).toBeDefined();
+    expect(lastSent.toolResponse.functionResponses).toHaveLength(1);
+    expect(lastSent.toolResponse.functionResponses[0].id).toBe('call_paris_weather');
+    expect(lastSent.toolResponse.functionResponses[0].name).toBe('google_search');
+    expect(lastSent.toolResponse.functionResponses[0].response.output).toBe(
+      'The current temperature in Paris is 18°C.'
+    );
+  });
+
+  it('handles quota rejection and suggests free tier rate limits', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
       onAudioChunk: vi.fn(),
@@ -428,33 +501,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
 
     expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
       'error',
-      expect.stringContaining('Grounding with Google Search requires a paid Google Cloud billing account')
-    );
-  });
-
-  it('handles quota rejection when Google Search Grounding is disabled and suggests free tier limits', async () => {
-    const callbacks = {
-      onConnectionChange: vi.fn(),
-      onAudioChunk: vi.fn(),
-      onInputTranscription: vi.fn(),
-      onOutputTranscription: vi.fn(),
-      onInterrupted: vi.fn(),
-      onTurnComplete: vi.fn(),
-    };
-
-    const client = new GeminiLiveClient(
-      { ...testSettings, enableGoogleSearch: false },
-      callbacks
-    );
-    client.connect();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    // Simulate Google WebSocket closing with quota exceeded error reason
-    mockWsInstance.close(1008, 'You exceeded your current quota, please check your plan and billing details.');
-
-    expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
-      'error',
-      expect.stringContaining('You have reached your current Google Gemini free tier rate limit')
+      expect.stringContaining('Quota Exceeded: You have reached your current Google Gemini rate limit')
     );
   });
 });
