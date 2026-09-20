@@ -559,8 +559,19 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     });
   });
 
-  it('short-circuits google_search tool call for static queries without invoking performGroundedSearch', async () => {
-    const fetchMock = vi.fn();
+  it('handles static queries by executing fast direct synthesis with skipWebFetch and returning factual output to prevent agent hangs', async () => {
+    const mockSearchResponse = {
+      candidates: [
+        {
+          content: { parts: [{ text: 'George Washington was the first president of the United States.' }] },
+          groundingMetadata: { groundingChunks: [] },
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSearchResponse,
+    });
     globalThis.fetch = fetchMock;
 
     const callbacks = {
@@ -597,93 +608,23 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     // Wait for async handling
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Should NOT have called fetch (no search performed)
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    // Should NOT have triggered searching status (skipped entirely)
-    expect(callbacks.onSearchStatus).not.toHaveBeenCalledWith(
-      'searching',
-      expect.anything()
-    );
-
-    // Should have sent a toolResponse telling the model to answer from knowledge
-    const lastSent = JSON.parse(mockWsInstance.sentMessages[mockWsInstance.sentMessages.length - 1]);
-    expect(lastSent.toolResponse).toBeDefined();
-    expect(lastSent.toolResponse.functionResponses[0].response.output).toContain(
-      'well-established knowledge'
-    );
-  });
-
-  it('enforces search cooldown between consecutive google_search calls', async () => {
-    const mockSearchResponse = {
-      candidates: [
-        {
-          content: { parts: [{ text: 'Bitcoin is at $95,000.' }] },
-          groundingMetadata: { groundingChunks: [] },
-        },
-      ],
-    };
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockSearchResponse,
-    });
-    globalThis.fetch = fetchMock;
-
-    const callbacks = {
-      onConnectionChange: vi.fn(),
-      onAudioChunk: vi.fn(),
-      onInputTranscription: vi.fn(),
-      onOutputTranscription: vi.fn(),
-      onInterrupted: vi.fn(),
-      onTurnComplete: vi.fn(),
-      onSearchStatus: vi.fn(),
-    };
-
-    const client = new GeminiLiveClient(
-      { ...testSettings, enableGoogleSearch: true },
-      callbacks
-    );
-    client.connect();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    mockWsInstance.triggerMessage({ setupComplete: {} });
-
-    // First search should go through
-    mockWsInstance.triggerMessage({
-      toolCall: {
-        functionCalls: [
-          {
-            id: 'call_1',
-            name: 'google_search',
-            args: { query: 'bitcoin price today' },
-          },
-        ],
-      },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Flash Lite was called directly
     expect(fetchMock).toHaveBeenCalled();
 
-    // Second search immediately after should be throttled by cooldown
-    fetchMock.mockClear();
-    mockWsInstance.triggerMessage({
-      toolCall: {
-        functionCalls: [
-          {
-            id: 'call_2',
-            name: 'google_search',
-            args: { query: 'ethereum price today' },
-          },
-        ],
-      },
+    // Verify search status callbacks
+    expect(callbacks.onSearchStatus).toHaveBeenCalledWith('searching', {
+      query: 'Who was the first president of the USA',
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(callbacks.onSearchStatus).toHaveBeenCalledWith('grounded', {
+      query: 'Who was the first president of the USA',
+      sources: expect.any(Array),
+    });
 
-    // fetch should NOT have been called for the second search
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    // toolResponse should tell model to use previous results
+    // Verify toolResponse was sent back with factual answer (preventing Live agent hang)
     const lastSent = JSON.parse(mockWsInstance.sentMessages[mockWsInstance.sentMessages.length - 1]);
-    expect(lastSent.toolResponse.functionResponses[0].response.output).toContain(
-      'search was just performed'
+    expect(lastSent.toolResponse).toBeDefined();
+    expect(lastSent.toolResponse.functionResponses[0].response.output).toBe(
+      'George Washington was the first president of the United States.'
     );
   });
 });

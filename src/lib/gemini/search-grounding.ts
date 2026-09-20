@@ -14,6 +14,7 @@ export interface GroundedSearchResult {
 export interface GroundedSearchOptions {
   braveApiKey?: string;
   timeoutMs?: number;
+  skipWebFetch?: boolean;
 }
 
 // Strictly Gemini 3 models (Gemini 3.1 Flash Lite and Gemini 3.5 Flash Lite)
@@ -236,6 +237,7 @@ export async function performGroundedSearch(
   }
 
   const braveApiKey = typeof options === 'object' ? options?.braveApiKey : undefined;
+  const skipWebFetch = typeof options === 'object' ? Boolean(options?.skipWebFetch) : false;
   const timeoutMs =
     typeof options === 'number'
       ? options
@@ -251,37 +253,39 @@ export async function performGroundedSearch(
   });
   const currentYear = new Date().getFullYear();
 
-  // 1. Fetch live web snippets (Brave Search > Weather > Wikipedia)
+  // 1. Fetch live web snippets (Brave Search > Weather > Wikipedia) unless skipped for static queries
   let snippets: WebSnippet[] = [];
 
-  if (braveApiKey && braveApiKey.trim()) {
-    try {
-      snippets = await fetchBraveSearchSnippets(query, braveApiKey);
-    } catch {
-      // Fall through to zero-key web snippets
-    }
-  }
-
-  // If no Brave snippets retrieved, fall back to Open-Meteo & Wikipedia
-  if (snippets.length === 0) {
-    try {
-      const weatherSnippet = await fetchLiveWeatherSnippet(query);
-      if (weatherSnippet) {
-        snippets.push(weatherSnippet);
+  if (!skipWebFetch) {
+    if (braveApiKey && braveApiKey.trim()) {
+      try {
+        snippets = await fetchBraveSearchSnippets(query, braveApiKey);
+      } catch {
+        // Fall through to zero-key web snippets
       }
-    } catch {
-      // Ignore weather failure
     }
-  }
 
-  if (snippets.length === 0) {
-    try {
-      const wikiSnippet = await fetchLiveWikiExtract(query, 3500);
-      if (wikiSnippet) {
-        snippets.push(wikiSnippet);
+    // If no Brave snippets retrieved, fall back to Open-Meteo & Wikipedia
+    if (snippets.length === 0) {
+      try {
+        const weatherSnippet = await fetchLiveWeatherSnippet(query);
+        if (weatherSnippet) {
+          snippets.push(weatherSnippet);
+        }
+      } catch {
+        // Ignore weather failure
       }
-    } catch {
-      // Ignore wiki failure
+    }
+
+    if (snippets.length === 0) {
+      try {
+        const wikiSnippet = await fetchLiveWikiExtract(query, 3500);
+        if (wikiSnippet) {
+          snippets.push(wikiSnippet);
+        }
+      } catch {
+        // Ignore wiki failure
+      }
     }
   }
 
