@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: SessionSettings = {
   customInstructions: '',
   targetLanguageCode: 'es',
   enableGoogleSearch: false, // Default to FALSE to ensure 100% Free Tier compatibility without quota rejection
+  braveSearchApiKey: '',
 };
 
 export const App: React.FC = () => {
