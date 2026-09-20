@@ -189,9 +189,22 @@ export class GeminiLiveClient {
 
     const targetModel = resolveLiveApiModel(this.settings.model);
 
+    const currentDateStr = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const currentYear = new Date().getFullYear();
+
     let promptWithSearch = fullPrompt;
     if (this.settings.enableGoogleSearch && !isTranscribeOnly) {
-      promptWithSearch += `\n\n[Google Search Grounding via Gemini 3.1 Flash Lite Enabled]: You have access to the \`google_search\` tool. Whenever answering questions that require up-to-date facts, current events, recent news, today's weather, sports scores, stock prices, or documentation, invoke \`google_search\` with a clear query. Once you receive the search output, answer the user conversationally and concisely using the retrieved facts.`;
+      promptWithSearch += `\n\n[Real-Time Date & Search Grounding via Gemini 3.1 Flash Lite Enabled]:
+- Current Real-World Date: ${currentDateStr} (Year ${currentYear}).
+- Your pre-training memory has an outdated knowledge cutoff.
+- Whenever answering questions about current events, recent developments, today's news, weather, sports scores, stock prices, technology releases, current officeholders, or facts that require real-time verification, you MUST invoke the \`google_search\` tool before answering.
+- Never guess or use outdated pre-training knowledge for time-sensitive queries; always verify using \`google_search\`.
+- Once you receive the search output, answer the user conversationally and concisely using the retrieved facts.`;
     }
 
     const setupPayload: BidiContentSetup = {
