@@ -8,4 +8,13 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    proxy: {
+      '/api/brave': {
+        target: 'https://api.search.brave.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/brave/, ''),
+      },
+    },
+  },
 })
