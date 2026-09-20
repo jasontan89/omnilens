@@ -196,10 +196,12 @@ export class GeminiLiveClient {
       day: 'numeric',
     });
     const currentYear = new Date().getFullYear();
-
     let promptWithSearch = fullPrompt;
     if (this.settings.enableGoogleSearch && !isTranscribeOnly) {
-      promptWithSearch += `\n\n[Real-Time Date & Search Grounding via Gemini 3.1 Flash Lite Enabled]:
+      const searchEngineDesc = this.settings.braveSearchApiKey
+        ? 'Brave Search API + Gemini 3.1 Flash Lite'
+        : 'Live Web Grounding + Gemini 3.1 Flash Lite';
+      promptWithSearch += `\n\n[Real-Time Date & Search Grounding via ${searchEngineDesc} Enabled]:
 - Current Real-World Date: ${currentDateStr} (Year ${currentYear}).
 - Your pre-training memory has an outdated knowledge cutoff.
 - Whenever answering questions about current events, recent developments, today's news, weather, sports scores, stock prices, technology releases, current officeholders, or facts that require real-time verification, you MUST invoke the \`google_search\` tool before answering.
@@ -363,7 +365,9 @@ export class GeminiLiveClient {
         this.callbacks.onSearchStatus?.('searching', { query });
 
         try {
-          const result = await performGroundedSearch(query, this.settings.apiKey);
+          const result = await performGroundedSearch(query, this.settings.apiKey, {
+            braveApiKey: this.settings.braveSearchApiKey,
+          });
           this.callbacks.onSearchStatus?.('grounded', {
             query,
             sources: result.sources,

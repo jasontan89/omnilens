@@ -174,4 +174,117 @@ describe('search-grounding (Direct Gemini 3.1 & 3.5 Flash Lite with Live Web Con
       'Search request failed (500)'
     );
   });
+
+  describe('Brave Search API integration', () => {
+    it('fetches and formats snippets from Brave Search API', async () => {
+      const mockBraveResponse = {
+        web: {
+          results: [
+            {
+              title: 'Latest AI Breakthroughs',
+              description: 'Scientists announce major advancement in neural architectures.',
+              url: 'https://technews.example.com/ai-breakthrough',
+            },
+          ],
+        },
+        news: {
+          results: [
+            {
+              title: 'Tech Summit 2026',
+              description: 'Keynote speakers revealed for annual tech summit.',
+              url: 'https://technews.example.com/summit-2026',
+            },
+          ],
+        },
+      };
+
+      const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (typeof url === 'string' && url.includes('brave')) {
+          expect(init?.headers).toEqual(
+            expect.objectContaining({
+              'X-Subscription-Token': 'test-brave-key',
+            })
+          );
+          return {
+            ok: true,
+            json: async () => mockBraveResponse,
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'Here are the latest breakthroughs from the live web.' }],
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      globalThis.fetch = fetchMock;
+
+      const result = await performGroundedSearch('AI news', 'test-gemini-key', {
+        braveApiKey: 'test-brave-key',
+      });
+
+      expect(result.text).toBe('Here are the latest breakthroughs from the live web.');
+      expect(result.sources).toEqual([
+        {
+          title: 'Latest AI Breakthroughs',
+          uri: 'https://technews.example.com/ai-breakthrough',
+        },
+        {
+          title: 'Tech Summit 2026',
+          uri: 'https://technews.example.com/summit-2026',
+        },
+      ]);
+    });
+
+    it('gracefully falls back to Open-Meteo/Wikipedia when Brave API key is invalid', async () => {
+      const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('brave')) {
+          return {
+            ok: false,
+            status: 422,
+            json: async () => ({ error: 'Invalid token' }),
+          };
+        }
+        if (typeof url === 'string' && url.includes('wikipedia.org')) {
+          return {
+            ok: true,
+            json: async () => ({
+              query: {
+                search: [{ title: 'Quantum Computing', snippet: 'Quantum computing is a type of computation' }],
+              },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'Quantum computing is rapidly progressing.' }],
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      globalThis.fetch = fetchMock;
+
+      const result = await performGroundedSearch('Quantum computing', 'test-gemini-key', {
+        braveApiKey: 'invalid-brave-key',
+      });
+
+      expect(result.text).toBe('Quantum computing is rapidly progressing.');
+      expect(result.sources.length).toBeGreaterThan(0);
+      expect(result.sources[0].uri).toContain('wikipedia.org');
+    });
+  });
 });
