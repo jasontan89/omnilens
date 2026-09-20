@@ -53,8 +53,8 @@ export class PcmPlayer {
       source.connect(this.analyserNode);
 
       const now = this.audioContext.currentTime;
-      // Add a tiny buffer lead (10ms) if the playhead fell behind
-      if (this.nextPlayTime < now) {
+      // If no active audio is playing or playhead fell behind, start playback at now + 10ms
+      if (this.activeSources.length === 0 || this.nextPlayTime < now) {
         this.nextPlayTime = now + 0.01;
       }
 
@@ -67,9 +67,22 @@ export class PcmPlayer {
         if (index > -1) {
           this.activeSources.splice(index, 1);
         }
+        // When all queued audio chunks have finished playing, resynchronize playhead to prevent cumulative drift
+        if (this.activeSources.length === 0 && this.audioContext) {
+          this.nextPlayTime = this.audioContext.currentTime;
+        }
       };
     } catch (err) {
       console.error('Error playing audio chunk:', err);
+    }
+  }
+
+  /**
+   * Resynchronizes playhead with audio context when a conversational turn completes
+   */
+  public resetPlayhead(): void {
+    if (this.audioContext && this.activeSources.length === 0) {
+      this.nextPlayTime = this.audioContext.currentTime;
     }
   }
 

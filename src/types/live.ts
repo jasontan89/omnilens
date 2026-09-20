@@ -91,6 +91,9 @@ export interface BidiContentSetup {
     systemInstruction?: {
       parts: { text: string }[];
     };
+    contextWindowCompression?: {
+      slidingWindow?: Record<string, unknown>;
+    };
     inputAudioTranscription?: {
       mode?: 'smart' | 'verbatim';
     };
@@ -108,7 +111,24 @@ export interface BidiRealtimeInput {
       mimeType: string; // "image/jpeg"
       data: string;     // Base64
     };
+    audioStreamEnd?: boolean;
     text?: string;
+  };
+}
+
+export interface BidiClientContent {
+  clientContent: {
+    turns: {
+      role: string;
+      parts: {
+        text?: string;
+        inlineData?: {
+          mimeType: string;
+          data: string;
+        };
+      }[];
+    }[];
+    turnComplete?: boolean;
   };
 }
 

@@ -311,7 +311,7 @@ export const App: React.FC = () => {
         pcmPlayerRef.current?.interrupt();
       },
       onTurnComplete: () => {
-        // Turn completed
+        pcmPlayerRef.current?.resetPlayhead();
       },
       onSearchStatus: (status, data) => {
         if (status === 'searching') {
@@ -366,6 +366,7 @@ export const App: React.FC = () => {
   };
 
   const stopAudioCapture = () => {
+    liveClientRef.current?.sendAudioStreamEnd();
     if (pcmRecorderRef.current) {
       pcmRecorderRef.current.stop();
       pcmRecorderRef.current = null;
@@ -392,7 +393,13 @@ export const App: React.FC = () => {
 
   // Mic Mute Toggle
   const handleToggleMic = () => {
-    setIsMicMuted((prev) => !prev);
+    setIsMicMuted((prev) => {
+      const next = !prev;
+      if (next) {
+        liveClientRef.current?.sendAudioStreamEnd();
+      }
+      return next;
+    });
   };
 
   // Speaker Mute Toggle
@@ -555,6 +562,7 @@ export const App: React.FC = () => {
             <TranscriptView
               messages={messages}
               onSendMessage={(text) => {
+                pcmPlayerRef.current?.interrupt();
                 liveClientRef.current?.sendText(text);
                 addTranscriptMessage('user', text);
               }}

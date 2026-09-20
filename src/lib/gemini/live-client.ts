@@ -1,4 +1,5 @@
 import type {
+  BidiClientContent,
   BidiContentSetup,
   BidiFunctionCall,
   BidiFunctionResponse,
@@ -254,6 +255,9 @@ export class GeminiLiveClient {
         systemInstruction: {
           parts: [{ text: promptWithSearch }],
         },
+        contextWindowCompression: {
+          slidingWindow: {},
+        },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
       },
@@ -371,9 +375,34 @@ export class GeminiLiveClient {
   public sendText(text: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupDone) return;
 
+    // Google Gemini Live API requires clientContent with turnComplete: true for text messages.
+    // realtimeInput is reserved for continuous streaming media (audio/video).
+    const payload: BidiClientContent = {
+      clientContent: {
+        turns: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: text.trim(),
+              },
+            ],
+          },
+        ],
+        turnComplete: true,
+      },
+    };
+
+    this.ws.send(JSON.stringify(payload));
+  }
+
+  public sendAudioStreamEnd(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupDone) return;
+
+    // Notify Gemini server-side VAD that the audio stream has paused/muted
     const payload: BidiRealtimeInput = {
       realtimeInput: {
-        text: text.trim(),
+        audioStreamEnd: true,
       },
     };
 

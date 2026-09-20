@@ -4,6 +4,7 @@ export class PcmRecorder {
   private processorNode: ScriptProcessorNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private analyserNode: AnalyserNode | null = null;
+  private silenceGainNode: GainNode | null = null;
   private isRecording: boolean = false;
   private onDataCallback: ((base64Pcm: string) => void) | null = null;
   private targetSampleRate: number = 16000;
@@ -67,8 +68,14 @@ export class PcmRecorder {
         }
       };
 
+      // Route through a GainNode with gain=0 (silence) so onaudioprocess fires in Chrome
+      // while preventing live microphone audio from leaking into speakers (eliminating acoustic feedback loops)
+      this.silenceGainNode = this.audioContext.createGain();
+      this.silenceGainNode.gain.value = 0;
+
       this.sourceNode.connect(this.processorNode);
-      this.processorNode.connect(this.audioContext.destination);
+      this.processorNode.connect(this.silenceGainNode);
+      this.silenceGainNode.connect(this.audioContext.destination);
 
       this.isRecording = true;
     } catch (err) {
@@ -83,6 +90,10 @@ export class PcmRecorder {
     if (this.processorNode) {
       this.processorNode.disconnect();
       this.processorNode = null;
+    }
+    if (this.silenceGainNode) {
+      this.silenceGainNode.disconnect();
+      this.silenceGainNode = null;
     }
     if (this.sourceNode) {
       this.sourceNode.disconnect();

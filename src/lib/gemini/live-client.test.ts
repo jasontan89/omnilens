@@ -84,6 +84,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.responseModalities).toEqual(['AUDIO']);
     expect(setupMsg.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
     expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+    expect(setupMsg.setup.contextWindowCompression).toEqual({ slidingWindow: {} });
   });
 
   it('maps gemini-3.8-live to models/gemini-3.1-flash-live-preview with medium thinkingLevel', async () => {
@@ -340,7 +341,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(videoPayload.realtimeInput.video.data).toBe(jpegFrame);
   });
 
-  it('uses realtimeInput.text when sending typed user prompts', async () => {
+  it('uses clientContent with turnComplete when sending typed user prompts', async () => {
     const callbacks = {
       onConnectionChange: vi.fn(),
       onAudioChunk: vi.fn(),
@@ -360,7 +361,33 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(mockWsInstance.sentMessages.length).toBe(2);
     const textPayload = JSON.parse(mockWsInstance.sentMessages[1]);
 
-    expect(textPayload.realtimeInput.text).toBe('Explain the function on screen');
+    expect(textPayload.clientContent).toBeDefined();
+    expect(textPayload.clientContent.turnComplete).toBe(true);
+    expect(textPayload.clientContent.turns).toHaveLength(1);
+    expect(textPayload.clientContent.turns[0].role).toBe('user');
+    expect(textPayload.clientContent.turns[0].parts[0].text).toBe('Explain the function on screen');
+  });
+
+  it('sends realtimeInput.audioStreamEnd when pausing or muting audio stream', async () => {
+    const callbacks = {
+      onConnectionChange: vi.fn(),
+      onAudioChunk: vi.fn(),
+      onInputTranscription: vi.fn(),
+      onOutputTranscription: vi.fn(),
+      onInterrupted: vi.fn(),
+      onTurnComplete: vi.fn(),
+    };
+
+    const client = new GeminiLiveClient(testSettings, callbacks);
+    client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    mockWsInstance.triggerMessage({ setupComplete: {} });
+
+    client.sendAudioStreamEnd();
+
+    expect(mockWsInstance.sentMessages.length).toBe(2);
+    const payload = JSON.parse(mockWsInstance.sentMessages[1]);
+    expect(payload.realtimeInput.audioStreamEnd).toBe(true);
   });
 
   it('handles server transcription and interruption events correctly', async () => {
