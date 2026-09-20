@@ -15,8 +15,13 @@ import type {
 } from './types/live';
 import { PcmRecorder } from './lib/audio/pcm-recorder';
 import { PcmPlayer } from './lib/audio/pcm-player';
-import { ScreenCapture } from './lib/video/screen-capture';
-import type { CaptureSource } from './lib/video/screen-capture';
+import {
+  ScreenCapture,
+  isMobileDevice,
+  isScreenShareSupported,
+  type CaptureSource,
+  type CameraFacingMode,
+} from './lib/video/screen-capture';
 import { GeminiLiveClient } from './lib/gemini/live-client';
 
 const STORAGE_KEY = 'omnilens_session_settings';
@@ -55,6 +60,37 @@ export const App: React.FC = () => {
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [captureSource, setCaptureSource] = useState<CaptureSource>(null);
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>(() =>
+    isMobileDevice() ? 'environment' : 'user'
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+  // Listen for PWA installation prompt event
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (!installPrompt) return;
+    try {
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+    } catch (err) {
+      console.error('Failed to trigger install prompt:', err);
+    }
+  };
 
   // Analyser nodes for visualizer
   const [userAnalyser, setUserAnalyser] = useState<AnalyserNode | null>(null);
@@ -118,8 +154,7 @@ export const App: React.FC = () => {
 
   // Manual Note actions
   const handleAddNote = useCallback((newNote: Omit<ExtractedNote, 'id' | 'timestamp'>) => {
-    setNotes((prev) => [
-      ...prev,
+    setNotes((prev) => [\n      ...prev,
       {
         ...newNote,
         id: Math.random().toString(36).substring(2, 9),
@@ -328,41 +363,70 @@ export const App: React.FC = () => {
     pcmPlayerRef.current?.setMuted(next);
   };
 
-  // Screen Share Toggle
+  // Screen Share Toggle with Mobile Detection & Graceful Fallback
   const handleToggleScreen = async () => {
     if (captureSource === 'screen') {
       screenCaptureRef.current?.stop();
       setCaptureSource(null);
       setActiveStream(null);
     } else {
+      if (!isScreenShareSupported()) {
+        setErrorMessage(
+          'Mobile browsers (iOS Safari / Android Chrome) do not permit OS screen capture. Switched to Rear Camera so you can point at monitors, slides, or documents.'
+        );
+        handleToggleCamera('environment');
+        return;
+      }
       try {
         const stream = await screenCaptureRef.current?.startScreen(settings.screenFps);
         if (stream) {
           setActiveStream(stream);
           setCaptureSource('screen');
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to start screen share:', err);
+        const errorObj = err as { message?: string };
+        setErrorMessage(errorObj?.message || 'Failed to start screen share.');
       }
     }
   };
 
-  // Camera Toggle
-  const handleToggleCamera = async () => {
-    if (captureSource === 'camera') {
+  // Camera Toggle with Facing Direction
+  const handleToggleCamera = async (facing?: CameraFacingMode) => {
+    if (captureSource === 'camera' && !facing) {
       screenCaptureRef.current?.stop();
       setCaptureSource(null);
       setActiveStream(null);
     } else {
       try {
-        const stream = await screenCaptureRef.current?.startCamera(settings.screenFps);
+        const targetFacing = facing || cameraFacingMode;
+        const stream = await screenCaptureRef.current?.startCamera(settings.screenFps, targetFacing);
         if (stream) {
           setActiveStream(stream);
           setCaptureSource('camera');
+          setCameraFacingMode(targetFacing);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to start camera:', err);
+        const errorObj = err as { message?: string };
+        setErrorMessage(errorObj?.message || 'Failed to start camera feed.');
       }
+    }
+  };
+
+  // Camera Flip Handler
+  const handleFlipCamera = async () => {
+    if (captureSource !== 'camera') return;
+    try {
+      const result = await screenCaptureRef.current?.flipCamera(settings.screenFps);
+      if (result) {
+        setActiveStream(result.stream);
+        setCameraFacingMode(result.facingMode);
+      }
+    } catch (err: unknown) {
+      console.error('Failed to flip camera:', err);
+      const errorObj = err as { message?: string };
+      setErrorMessage(errorObj?.message || 'Failed to flip camera.');
     }
   };
 
@@ -386,6 +450,8 @@ export const App: React.FC = () => {
         currentModel={settings.model}
         currentPersona={settings.persona}
         enableGoogleSearch={settings.enableGoogleSearch}
+        canInstallPwa={!!installPrompt}
+        onInstallPwa={handleInstallPwa}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSelectPersona={handleSelectPersona}
         onDisableSearchGrounding={handleDisableSearchGrounding}
@@ -409,8 +475,10 @@ export const App: React.FC = () => {
               stream={activeStream}
               captureSource={captureSource}
               fps={settings.screenFps}
+              facingMode={cameraFacingMode}
               onStartScreen={handleToggleScreen}
               onStartCamera={handleToggleCamera}
+              onFlipCamera={handleFlipCamera}
               onStopCapture={() => {
                 screenCaptureRef.current?.stop();
                 setCaptureSource(null);
@@ -474,11 +542,13 @@ export const App: React.FC = () => {
         isMicMuted={isMicMuted}
         isSpeakerMuted={isSpeakerMuted}
         captureSource={captureSource}
+        facingMode={cameraFacingMode}
         onToggleConnect={handleToggleConnect}
         onToggleMic={handleToggleMic}
         onToggleSpeaker={handleToggleSpeaker}
         onToggleScreen={handleToggleScreen}
         onToggleCamera={handleToggleCamera}
+        onFlipCamera={handleFlipCamera}
       />
 
       {/* Settings Modal */}

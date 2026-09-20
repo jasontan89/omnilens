@@ -13,6 +13,7 @@ import {
   Languages,
   TrendingUp,
   Globe,
+  Download,
 } from 'lucide-react';
 import type { ConnectionState, CopilotPersona, LiveModel } from '../types/live';
 
@@ -22,6 +23,8 @@ interface HeaderProps {
   currentModel: LiveModel;
   currentPersona: CopilotPersona;
   enableGoogleSearch?: boolean;
+  canInstallPwa?: boolean;
+  onInstallPwa?: () => void;
   onOpenSettings: () => void;
   onSelectPersona: (persona: CopilotPersona) => void;
   onDisableSearchGrounding?: () => void;
@@ -55,6 +58,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentModel,
   currentPersona,
   enableGoogleSearch,
+  canInstallPwa,
+  onInstallPwa,
   onOpenSettings,
   onSelectPersona,
   onDisableSearchGrounding,
@@ -164,6 +169,18 @@ export const Header: React.FC<HeaderProps> = ({
             <Globe className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
             <span>Web Grounded</span>
           </div>
+        )}
+
+        {/* Install PWA Button (When browser supports install prompt) */}
+        {canInstallPwa && onInstallPwa && (
+          <button
+            onClick={onInstallPwa}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-purple-900/40 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            title="Install OmniLens as an app on your device"
+          >
+            <Download className="w-3.5 h-3.5 text-purple-200" />
+            <span>Install App</span>
+          </button>
         )}
 
         {/* Settings button */}
