@@ -11,6 +11,11 @@ export interface GroundedSearchResult {
   modelUsed: string;
 }
 
+export interface GroundedSearchOptions {
+  braveApiKey?: string;
+  timeoutMs?: number;
+}
+
 // Strictly Gemini 3 models (Gemini 3.1 Flash Lite and Gemini 3.5 Flash Lite)
 const SEARCH_MODELS = [
   'gemini-3.1-flash-lite-preview',
@@ -18,10 +23,76 @@ const SEARCH_MODELS = [
   'gemini-3.1-flash-lite',
 ];
 
-interface WebSnippet {
+export interface WebSnippet {
   title: string;
   snippet: string;
   uri: string;
+}
+
+/**
+ * Fetches real-time live search snippets from Brave Search API.
+ * Free tier provides 2,000 queries/month with no credit card required.
+ * Handles Vite dev proxy, direct endpoint, and CORS proxy fallbacks.
+ */
+export async function fetchBraveSearchSnippets(
+  query: string,
+  apiKey: string,
+  timeoutMs: number = 4500
+): Promise<WebSnippet[]> {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) return [];
+
+  const endpoints = [
+    // 1. Vite dev server proxy (handles local CORS seamlessly)
+    `/api/brave/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+    // 2. Direct Brave API endpoint (in environments where CORS allows or SSR/backend)
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+    // 3. Transparent CORS proxy fallback for client-side static PWA deployments
+    `https://corsproxy.io/?url=${encodeURIComponent(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`
+    )}`,
+  ];
+
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(endpoint, {
+        headers: {
+          Accept: 'application/json',
+          'X-Subscription-Token': cleanKey,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        continue;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await res.json();
+      const webResults = data?.web?.results || [];
+      const newsResults = data?.news?.results || [];
+      const combined = [...webResults, ...newsResults];
+
+      if (combined.length === 0) continue;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const snippets: WebSnippet[] = combined.slice(0, 5).map((item: any) => ({
+        title: item.title || 'Web Search Result',
+        snippet: (item.description || '').replace(/<[^>]+>/g, '').trim(),
+        uri: item.url || '',
+      }));
+
+      return snippets.filter((s) => Boolean(s.snippet && s.uri));
+    } catch {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return [];
 }
 
 /**
@@ -75,8 +146,8 @@ async function fetchLiveWeatherSnippet(query: string): Promise<WebSnippet | null
 
 /**
  * Retrieves up-to-date live encyclopedic information from Wikipedia using full intro extracts.
- * Searching for the most relevant article and fetching its lead section ensures 100% current,
- * real-world accuracy (e.g. current political leaders, corporate executives, sports champions, releases).
+ * Searching for the most relevant article and fetching its lead section ensures real-world accuracy
+ * without needing an API key.
  */
 async function fetchLiveWikiExtract(
   query: string,
@@ -142,19 +213,27 @@ async function fetchLiveWikiExtract(
 /**
  * Performs real-time search grounding using Gemini 3.1 / 3.5 Flash Lite backed by live web data.
  * Fixes outdated pre-training hallucination by:
- * 1. Injecting the exact current real-world date and year anchor.
- * 2. Fetching real-time live web context (live weather or live encyclopedia extract).
- * 3. Having Gemini 3.1 Flash Lite synthesize an accurate, concise, spoken-ready answer.
+ * 1. Searching Brave Search API for live web snippets (if Brave API key provided).
+ * 2. Falling back to Open-Meteo or Wikipedia lead extracts when no key is entered.
+ * 3. Synthesizing an accurate, spoken-ready answer using Gemini 3.1 Flash Lite anchored to the current date.
  */
 export async function performGroundedSearch(
   query: string,
   apiKey: string,
-  timeoutMs: number = 8500
+  options?: GroundedSearchOptions | number
 ): Promise<GroundedSearchResult> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
     throw new Error('API key is required to perform grounded Google search.');
   }
+
+  const braveApiKey = typeof options === 'object' ? options?.braveApiKey : undefined;
+  const timeoutMs =
+    typeof options === 'number'
+      ? options
+      : typeof options === 'object' && options?.timeoutMs
+        ? options.timeoutMs
+        : 8500;
 
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -164,15 +243,27 @@ export async function performGroundedSearch(
   });
   const currentYear = new Date().getFullYear();
 
-  // 1. Fetch live web snippets in parallel (weather or encyclopedic extract)
-  const snippets: WebSnippet[] = [];
-  try {
-    const weatherSnippet = await fetchLiveWeatherSnippet(query);
-    if (weatherSnippet) {
-      snippets.push(weatherSnippet);
+  // 1. Fetch live web snippets (Brave Search > Weather > Wikipedia)
+  let snippets: WebSnippet[] = [];
+
+  if (braveApiKey && braveApiKey.trim()) {
+    try {
+      snippets = await fetchBraveSearchSnippets(query, braveApiKey);
+    } catch {
+      // Fall through to zero-key web snippets
     }
-  } catch {
-    // Ignore weather fetch failure
+  }
+
+  // If no Brave snippets retrieved, fall back to Open-Meteo & Wikipedia
+  if (snippets.length === 0) {
+    try {
+      const weatherSnippet = await fetchLiveWeatherSnippet(query);
+      if (weatherSnippet) {
+        snippets.push(weatherSnippet);
+      }
+    } catch {
+      // Ignore weather failure
+    }
   }
 
   if (snippets.length === 0) {
@@ -182,13 +273,17 @@ export async function performGroundedSearch(
         snippets.push(wikiSnippet);
       }
     } catch {
-      // Ignore wiki fetch failure
+      // Ignore wiki failure
     }
   }
 
   const liveContextStr =
     snippets.length > 0
-      ? `Live Web Context (${snippets[0].title}):\n${snippets[0].snippet}\n\n`
+      ? `Live Web Context:\n` +
+        snippets
+          .map((s, idx) => `[Source ${idx + 1}: ${s.title}] (${s.uri})\n${s.snippet}`)
+          .join('\n\n') +
+        '\n\n'
       : '';
 
   const prompt = `Current real-world date: ${currentDate}. Current year: ${currentYear}.
@@ -252,10 +347,8 @@ Keep the response direct and concise so it can be spoken aloud naturally by a vo
         candidate?.content?.parts?.[0]?.text ||
         'No direct textual answer returned.';
 
-      const metadata = candidate?.groundingMetadata;
-      const searchQueries: string[] = metadata?.webSearchQueries || [query];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const extractedSources: GroundedSearchSource[] = (metadata?.groundingChunks || [])
+      const metadataChunks: GroundedSearchSource[] = (candidate?.groundingMetadata?.groundingChunks || [])
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((chunk: any) => ({
           title: chunk.web?.title || 'Web Source',
@@ -264,10 +357,10 @@ Keep the response direct and concise so it can be spoken aloud naturally by a vo
         .filter((s: GroundedSearchSource) => Boolean(s.uri));
 
       const sources: GroundedSearchSource[] =
-        extractedSources.length > 0
-          ? extractedSources
-          : snippets.length > 0
-            ? snippets.map((s) => ({ title: s.title, uri: s.uri }))
+        snippets.length > 0
+          ? snippets.map((s) => ({ title: s.title, uri: s.uri }))
+          : metadataChunks.length > 0
+            ? metadataChunks
             : [
                 {
                   title: `Google ${model.includes('3.5') ? 'Gemini 3.5' : 'Gemini 3.1'} Flash Lite Knowledge Engine`,
@@ -279,7 +372,7 @@ Keep the response direct and concise so it can be spoken aloud naturally by a vo
         query,
         text,
         sources,
-        searchQueries,
+        searchQueries: [query],
         modelUsed: model,
       };
     } catch (err: unknown) {
@@ -295,6 +388,6 @@ Keep the response direct and concise so it can be spoken aloud naturally by a vo
 
   throw (
     lastError ||
-    new Error('Google Search Grounding failed across all Gemini 3 Flash Lite models.')
+    new Error('Search Grounding failed across all Gemini 3 Flash Lite models.')
   );
 }
