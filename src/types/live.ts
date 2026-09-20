@@ -5,6 +5,8 @@ export type LiveModel =
   | 'gemini-3.5-live-translate-preview'
   | 'gemini-3.5-transcribe-live';
 
+export type CameraFacingMode = 'user' | 'environment';
+
 export type CopilotPersona =
   | 'pair-programmer'
   | 'meeting-copilot'
