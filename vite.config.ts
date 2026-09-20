@@ -13,7 +13,10 @@ export default defineConfig({
       '/api/brave': {
         target: 'https://api.search.brave.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/brave/, ''),
+        rewrite: (path) =>
+          path.startsWith('/api/brave/res')
+            ? path.replace(/^\/api\/brave/, '')
+            : path.replace(/^\/api\/brave/, '/res/v1/web/search'),
         secure: false,
       },
     },

@@ -43,11 +43,13 @@ export async function fetchBraveSearchSnippets(
   if (!cleanKey) return [];
 
   const endpoints = [
-    // 1. Vite dev server proxy (handles local CORS seamlessly)
+    // 1. Vercel Serverless / Edge Function & Vite dev proxy endpoint
+    `/api/brave?q=${encodeURIComponent(query)}&count=5`,
+    // 2. Full path proxy endpoint
     `/api/brave/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
-    // 2. Direct Brave API endpoint (in environments where CORS allows or SSR/backend)
+    // 3. Direct Brave API endpoint (in environments where CORS allows or SSR/backend)
     `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
-    // 3. Transparent CORS proxy fallback for client-side static PWA deployments
+    // 4. Transparent CORS proxy fallback for client-side static PWA deployments
     `https://corsproxy.io/?url=${encodeURIComponent(
       `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`
     )}`,
@@ -68,6 +70,12 @@ export async function fetchBraveSearchSnippets(
       clearTimeout(timeoutId);
 
       if (!res.ok) {
+        continue;
+      }
+
+      // Safeguard against HTML responses (e.g. index.html SPA fallbacks)
+      const contentType = res.headers?.get?.('content-type') || '';
+      if (contentType.includes('text/html')) {
         continue;
       }
 
