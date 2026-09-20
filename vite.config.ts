@@ -14,6 +14,7 @@ export default defineConfig({
         target: 'https://api.search.brave.com',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/brave/, ''),
+        secure: false,
       },
     },
   },

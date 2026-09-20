@@ -320,9 +320,12 @@ export const App: React.FC = () => {
         } else if (status === 'grounded') {
           setIsSearchingGoogle(false);
           if (data?.query) {
+            const engineLabel = settings.braveSearchApiKey
+              ? 'Brave Search (Gemini 3.1 Flash Lite)'
+              : 'Google Search (Gemini 3.1 Flash Lite)';
             addTranscriptMessage(
               'system',
-              `🔍 Grounded with Google Search (Gemini 3.1 Flash Lite): "${data.query}"`,
+              `🔍 Grounded with ${engineLabel}: "${data.query}"`,
               data.sources,
               data.query
             );
