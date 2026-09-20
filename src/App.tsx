@@ -154,7 +154,8 @@ export const App: React.FC = () => {
 
   // Manual Note actions
   const handleAddNote = useCallback((newNote: Omit<ExtractedNote, 'id' | 'timestamp'>) => {
-    setNotes((prev) => [\n      ...prev,
+    setNotes((prev) => [
+      ...prev,
       {
         ...newNote,
         id: Math.random().toString(36).substring(2, 9),
