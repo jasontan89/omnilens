@@ -62,27 +62,27 @@
 
 ```mermaid
 flowchart TD
-    subgraph Browser ["Client Browser (OmniLens Client)"]
-        UI["React 19 UI & Controls"]
-        Mic["Microphone Input (16kHz PCM)"]
-        Display["Screen or Camera Capture (JPEG)"]
-        AudioOut["AudioContext Playback (24kHz PCM)"]
+    subgraph Browser ["Client Browser - OmniLens Client"]
+        UI["React 19 UI and Controls"]
+        Mic["Microphone Input - 16kHz PCM"]
+        Display["Screen or Camera Capture - JPEG"]
+        AudioOut["AudioContext Playback - 24kHz PCM"]
         Visualizer["Neon FFT Visualizer"]
-        NotesState["Notes & Action Items Store"]
-        SettingsStore["localStorage (API Key & Settings)"]
+        NotesState["Notes and Action Items Store"]
+        SettingsStore["localStorage - API Key and Settings"]
         
-        LiveClient["GeminiLiveClient (WebSocket Manager)"]
+        LiveClient["GeminiLiveClient - WebSocket Manager"]
         SearchRouter["Grounded Search Controller"]
     end
 
     subgraph GoogleEdge ["Google Gemini API Infrastructure"]
-        LiveWS["Gemini Live WebSocket Gateway (BidiGenerateContent)"]
-        ModelCore["Gemini Multimodal Live Engine (gemini-3.1-flash-live-preview)"]
-        RestAPI["Gemini Flash Lite REST API (gemini-3.1 / 3.5 Flash Lite)"]
+        LiveWS["Gemini Live WebSocket Gateway"]
+        ModelCore["Gemini Multimodal Live Engine"]
+        RestAPI["Gemini Flash Lite REST API"]
     end
 
     subgraph ExternalServices ["External Knowledge Services"]
-        Brave["Brave Search API (/api/brave Edge Proxy)"]
+        Brave["Brave Search API - Edge Proxy"]
         Wiki["Wikipedia REST API"]
         Meteo["Open-Meteo Weather API"]
     end
@@ -90,11 +90,11 @@ flowchart TD
     %% Client data paths
     Mic -->|Raw Audio| LiveClient
     Display -->|1-5 FPS JPEG| LiveClient
-    UI -->|Typed Input & Config| LiveClient
+    UI -->|Typed Input and Config| LiveClient
     SettingsStore -.->|API Key| LiveClient
 
     %% WebSocket Bidirectional Pipe
-    LiveClient <-->|BidiGenerateContent Protocol (TLS WebSocket)| LiveWS
+    LiveClient <-->|BidiGenerateContent Protocol| LiveWS
     LiveWS <--> ModelCore
 
     %% Audio playback & visualizer
@@ -105,14 +105,14 @@ flowchart TD
     LiveClient -->|Transcriptions| NotesState
 
     %% Tool Calling & Search Grounding
-    ModelCore -->|toolCall: google_search| LiveWS
-    LiveWS -->|toolCall| LiveClient
+    ModelCore -->|Google Search Function Call| LiveWS
+    LiveWS -->|Tool Call Forwarding| LiveClient
     LiveClient -->|Query Dispatch| SearchRouter
     SearchRouter -->|Search Synthesis| RestAPI
     SearchRouter -->|Live Web Query| Brave
     SearchRouter -->|Encyclopedia Query| Wiki
     SearchRouter -->|Live Forecast| Meteo
-    SearchRouter -->|toolResponse: Text| LiveClient
+    SearchRouter -->|Tool Response Text| LiveClient
 ```
 
 ---
