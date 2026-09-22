@@ -124,7 +124,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         className={`flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-bold tracking-wide transition-all shadow-lg active:scale-95 ${
           isConnected
             ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/30'
-            : connectionState === 'connecting'
+            : connectionState === 'connecting' || connectionState === 'reconnecting'
             ? 'bg-amber-600 text-white animate-pulse'
             : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-900/40 hover:shadow-purple-900/60'
         }`}
@@ -134,6 +134,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
             <PhoneOff className="w-4 h-4" />
             <span>End Session</span>
           </>
+        ) : connectionState === 'reconnecting' ? (
+          <span>Reconnecting...</span>
         ) : connectionState === 'connecting' ? (
           <span>Connecting...</span>
         ) : (

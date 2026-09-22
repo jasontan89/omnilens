@@ -85,6 +85,7 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Aoede');
     expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
     expect(setupMsg.setup.contextWindowCompression).toEqual({ slidingWindow: {} });
+    expect(setupMsg.setup.sessionResumption).toEqual({ handle: null });
   });
 
   it('maps gemini-3.8-live to models/gemini-3.1-flash-live-preview with medium thinkingLevel', async () => {
@@ -653,5 +654,193 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(lastSent.toolResponse.functionResponses[0].response.output).toBe(
       'George Washington was the first president of the United States.'
     );
+  });
+
+  describe('Session Resumption, GoAway, and Auto-Reconnect', () => {
+    it('stores session resumption handle and includes it in next setup', async () => {
+      const callbacks = {
+        onConnectionChange: vi.fn(),
+        onAudioChunk: vi.fn(),
+        onInputTranscription: vi.fn(),
+        onOutputTranscription: vi.fn(),
+        onInterrupted: vi.fn(),
+        onTurnComplete: vi.fn(),
+      };
+
+      const client = new GeminiLiveClient(testSettings, callbacks);
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      mockWsInstance.triggerMessage({ setupComplete: {} });
+
+      // Server sends session resumption update with token
+      mockWsInstance.triggerMessage({
+        sessionResumptionUpdate: {
+          resumable: true,
+          newHandle: 'test_token_handle_999',
+        },
+      });
+
+      expect(client.getResumptionHandle()).toBe('test_token_handle_999');
+    });
+
+    it('handles GoAway message by initiating proactive reconnection', async () => {
+      const callbacks = {
+        onConnectionChange: vi.fn(),
+        onAudioChunk: vi.fn(),
+        onInputTranscription: vi.fn(),
+        onOutputTranscription: vi.fn(),
+        onInterrupted: vi.fn(),
+        onTurnComplete: vi.fn(),
+      };
+
+      const client = new GeminiLiveClient(testSettings, callbacks);
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      mockWsInstance.triggerMessage({ setupComplete: {} });
+
+      // Server sends GoAway warning
+      mockWsInstance.triggerMessage({
+        goAway: {
+          timeLeft: '15s',
+        },
+      });
+
+      expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+        'reconnecting',
+        expect.stringContaining('Session expired. Reconnecting (1/3)...')
+      );
+      expect(client.getReconnectAttempts()).toBe(1);
+
+      // Clean up timer by disconnecting
+      client.disconnect();
+    });
+
+    it('distinguishes code 1008 session expiration from auth errors and attempts reconnection', async () => {
+      const callbacks = {
+        onConnectionChange: vi.fn(),
+        onAudioChunk: vi.fn(),
+        onInputTranscription: vi.fn(),
+        onOutputTranscription: vi.fn(),
+        onInterrupted: vi.fn(),
+        onTurnComplete: vi.fn(),
+      };
+
+      const client = new GeminiLiveClient(testSettings, callbacks);
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      mockWsInstance.triggerMessage({ setupComplete: {} });
+
+      // Server terminates session at ~10 minutes with code 1008 and non-auth reason
+      mockWsInstance.close(1008, 'Session duration exceeded');
+
+      // Must NOT be treated as "Invalid API key" error!
+      expect(callbacks.onConnectionChange).not.toHaveBeenCalledWith(
+        'error',
+        'Invalid API key or unauthorized access.'
+      );
+      expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+        'reconnecting',
+        expect.stringContaining('Session expired. Reconnecting (1/3)...')
+      );
+
+      client.disconnect();
+    });
+
+    it('correctly reports error when close reason explicitly specifies API key / auth failure', async () => {
+      const callbacks = {
+        onConnectionChange: vi.fn(),
+        onAudioChunk: vi.fn(),
+        onInputTranscription: vi.fn(),
+        onOutputTranscription: vi.fn(),
+        onInterrupted: vi.fn(),
+        onTurnComplete: vi.fn(),
+      };
+
+      const client = new GeminiLiveClient(testSettings, callbacks);
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Simulate genuine auth error from server
+      mockWsInstance.close(1008, 'API key not valid. Please pass a valid API key.');
+
+      expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+        'error',
+        'Invalid API key or unauthorized access.'
+      );
+    });
+
+    it('does not auto-reconnect when user explicitly calls disconnect()', async () => {
+      const callbacks = {
+        onConnectionChange: vi.fn(),
+        onAudioChunk: vi.fn(),
+        onInputTranscription: vi.fn(),
+        onOutputTranscription: vi.fn(),
+        onInterrupted: vi.fn(),
+        onTurnComplete: vi.fn(),
+      };
+
+      const client = new GeminiLiveClient(testSettings, callbacks);
+      client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      mockWsInstance.triggerMessage({ setupComplete: {} });
+
+      client.disconnect();
+
+      expect(callbacks.onConnectionChange).toHaveBeenCalledWith('disconnected');
+      expect(client.getReconnectAttempts()).toBe(0);
+      expect(client.getIsConnected()).toBe(false);
+    });
+
+    it('stops reconnecting and reports error when max reconnect attempts reached', async () => {
+      vi.useFakeTimers();
+      try {
+        const callbacks = {
+          onConnectionChange: vi.fn(),
+          onAudioChunk: vi.fn(),
+          onInputTranscription: vi.fn(),
+          onOutputTranscription: vi.fn(),
+          onInterrupted: vi.fn(),
+          onTurnComplete: vi.fn(),
+        };
+
+        const client = new GeminiLiveClient(testSettings, callbacks);
+        client.connect();
+        await vi.advanceTimersByTimeAsync(10);
+
+        // Attempt 1: socket drops
+        mockWsInstance.close(1006, 'Connection lost 1');
+        expect(client.getReconnectAttempts()).toBe(1);
+
+        // Advance past delay (1000ms) to trigger reconnect()
+        await vi.advanceTimersByTimeAsync(1100);
+
+        // Attempt 2: new socket drops
+        mockWsInstance.close(1006, 'Connection lost 2');
+        expect(client.getReconnectAttempts()).toBe(2);
+
+        // Advance past delay (2000ms) to trigger reconnect()
+        await vi.advanceTimersByTimeAsync(2100);
+
+        // Attempt 3: new socket drops
+        mockWsInstance.close(1006, 'Connection lost 3');
+        expect(client.getReconnectAttempts()).toBe(3);
+
+        // Advance past delay (4000ms) to trigger reconnect()
+        await vi.advanceTimersByTimeAsync(4100);
+
+        // Attempt 4: fails because max attempts (3) is reached
+        mockWsInstance.close(1006, 'Connection lost 4');
+
+        expect(callbacks.onConnectionChange).toHaveBeenCalledWith(
+          'error',
+          'Session expired and reconnection failed. Please reconnect manually.'
+        );
+        expect(client.getReconnectAttempts()).toBe(0);
+
+        client.disconnect();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

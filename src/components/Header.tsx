@@ -122,7 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`w-3.5 h-3.5 ${
               connectionState === 'connected'
                 ? 'text-emerald-400 animate-pulse'
-                : connectionState === 'connecting'
+                : connectionState === 'connecting' || connectionState === 'reconnecting'
                 ? 'text-amber-400 animate-spin'
                 : connectionState === 'error'
                 ? 'text-rose-400'
@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`capitalize ${
               connectionState === 'connected'
                 ? 'text-emerald-400'
-                : connectionState === 'connecting'
+                : connectionState === 'connecting' || connectionState === 'reconnecting'
                 ? 'text-amber-400'
                 : connectionState === 'error'
                 ? 'text-rose-400'
@@ -142,6 +142,8 @@ export const Header: React.FC<HeaderProps> = ({
           >
             {connectionState === 'connected'
               ? 'Live'
+              : connectionState === 'reconnecting'
+              ? 'Reconnecting...'
               : connectionState === 'connecting'
               ? 'Connecting...'
               : connectionState === 'error'

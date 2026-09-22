@@ -50,6 +50,11 @@ export class GeminiLiveClient {
   private callbacks: LiveClientCallbacks;
   private isConnected: boolean = false;
   private isSetupDone: boolean = false;
+  private resumptionHandle: string | null = null;
+  private intentionalDisconnect: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 3;
+  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(settings: SessionSettings, callbacks: LiveClientCallbacks) {
     this.settings = settings;
@@ -101,6 +106,7 @@ export class GeminiLiveClient {
     this.callbacks.onConnectionChange('connecting');
     this.isSetupDone = false;
     this.isConnected = false;
+    this.intentionalDisconnect = false;
 
     try {
       const endpoint = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(
@@ -139,18 +145,32 @@ export class GeminiLiveClient {
         this.isSetupDone = false;
         console.log(`WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
 
-        if (event.code === 1000) {
+        // User-initiated disconnect — do not auto-reconnect
+        if (this.intentionalDisconnect || event.code === 1000) {
           this.callbacks.onConnectionChange('disconnected');
-        } else if (event.reason.toLowerCase().includes('quota') || event.reason.toLowerCase().includes('billing')) {
+          return;
+        }
+
+        const reason = (event.reason || '').toLowerCase();
+
+        // Quota / billing errors — not recoverable via reconnect
+        if (reason.includes('quota') || reason.includes('billing')) {
           this.callbacks.onConnectionChange(
             'error',
             'Quota Exceeded: You have reached your current Google Gemini rate limit. Please check your quota at ai.google.dev or retry in a few moments.'
           );
-        } else if (event.code === 1008 || event.reason.toLowerCase().includes('api key')) {
-          this.callbacks.onConnectionChange('error', 'Invalid API key or unauthorized access.');
-        } else {
-          this.callbacks.onConnectionChange('disconnected', event.reason || `Disconnected (${event.code})`);
+          return;
         }
+
+        // Genuine API key errors — only when the reason explicitly mentions API key
+        if (reason.includes('api key') || reason.includes('api_key') || reason.includes('unauthorized')) {
+          this.callbacks.onConnectionChange('error', 'Invalid API key or unauthorized access.');
+          return;
+        }
+
+        // Server-initiated disconnect (code 1008 without auth reason, GoAway timeout,
+        // or any unexpected close) — attempt transparent reconnection
+        this.attemptReconnect();
       };
     } catch (err) {
       console.error('Failed to initiate WebSocket:', err);
@@ -260,6 +280,9 @@ export class GeminiLiveClient {
         },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
+        sessionResumption: {
+          handle: this.resumptionHandle,
+        },
       },
     };
 
@@ -297,7 +320,26 @@ export class GeminiLiveClient {
     if (data.setupComplete) {
       this.isSetupDone = true;
       this.isConnected = true;
+      this.reconnectAttempts = 0;
       this.callbacks.onConnectionChange('connected');
+      return;
+    }
+
+    // 1b. Handle GoAway — server warns connection will terminate soon
+    if (data.goAway) {
+      console.log('[Gemini Live] GoAway received, time left:', data.goAway.timeLeft);
+      // Proactively reconnect before the server drops us
+      this.attemptReconnect();
+      return;
+    }
+
+    // 1c. Handle session resumption token updates
+    if (data.sessionResumptionUpdate) {
+      const update = data.sessionResumptionUpdate;
+      if (update.resumable && update.newHandle) {
+        this.resumptionHandle = update.newHandle;
+        console.log('[Gemini Live] Session resumption handle updated');
+      }
       return;
     }
 
@@ -410,6 +452,11 @@ export class GeminiLiveClient {
   }
 
   public disconnect(): void {
+    this.intentionalDisconnect = true;
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
     if (this.ws) {
       try {
         this.ws.close(1000, 'User disconnected');
@@ -420,7 +467,48 @@ export class GeminiLiveClient {
     }
     this.isConnected = false;
     this.isSetupDone = false;
+    this.reconnectAttempts = 0;
     this.callbacks.onConnectionChange('disconnected');
+  }
+
+  private attemptReconnect(): void {
+    if (this.intentionalDisconnect) return;
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn('[Gemini Live] Max reconnect attempts reached');
+      this.callbacks.onConnectionChange(
+        'error',
+        'Session expired and reconnection failed. Please reconnect manually.'
+      );
+      this.reconnectAttempts = 0;
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 8000);
+    console.log(`[Gemini Live] Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms...`);
+
+    this.callbacks.onConnectionChange(
+      'reconnecting',
+      `Session expired. Reconnecting (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+    );
+
+    // Close existing socket cleanly
+    if (this.ws) {
+      try {
+        this.ws.onclose = null; // Prevent recursive onclose handler
+        this.ws.close();
+      } catch {
+        // ignore
+      }
+      this.ws = null;
+    }
+
+    this.reconnectTimeoutId = setTimeout(() => {
+      this.reconnectTimeoutId = null;
+      if (this.intentionalDisconnect) return;
+      this.connect();
+    }, delay);
   }
 
   private async handleToolCalls(functionCalls: BidiFunctionCall[]): Promise<void> {
@@ -494,5 +582,13 @@ export class GeminiLiveClient {
 
   public getIsSetupDone(): boolean {
     return this.isSetupDone;
+  }
+
+  public getResumptionHandle(): string | null {
+    return this.resumptionHandle;
+  }
+
+  public getReconnectAttempts(): number {
+    return this.reconnectAttempts;
   }
 }

@@ -98,6 +98,9 @@ export interface BidiContentSetup {
       mode?: 'smart' | 'verbatim';
     };
     outputAudioTranscription?: Record<string, unknown>;
+    sessionResumption?: {
+      handle?: string | null;
+    };
   };
 }
 
@@ -176,5 +179,12 @@ export interface BidiServerMessage {
   };
   toolCallCancellation?: {
     ids: string[];
+  };
+  goAway?: {
+    timeLeft?: string; // Duration string e.g. '30s'
+  };
+  sessionResumptionUpdate?: {
+    newHandle?: string;
+    resumable?: boolean;
   };
 }

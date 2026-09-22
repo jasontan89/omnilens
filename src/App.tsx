@@ -241,7 +241,10 @@ export const App: React.FC = () => {
     const client = new GeminiLiveClient(settings, {
       onConnectionChange: (state, err) => {
         setConnectionState(state);
-        if (err) {
+        if (state === 'reconnecting') {
+          setErrorMessage(err);
+          addTranscriptMessage('system', err || 'Session expired. Reconnecting...');
+        } else if (err) {
           setErrorMessage(err);
         } else if (state === 'connected') {
           setErrorMessage(undefined);
@@ -376,7 +379,7 @@ export const App: React.FC = () => {
 
   // Connect / Disconnect toggle
   const handleToggleConnect = async () => {
-    if (connectionState === 'connected' || connectionState === 'connecting') {
+    if (connectionState === 'connected' || connectionState === 'connecting' || connectionState === 'reconnecting') {
       liveClientRef.current?.disconnect();
       stopAudioCapture();
       screenCaptureRef.current?.stop();
