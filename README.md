@@ -65,7 +65,7 @@ flowchart TD
     subgraph Browser ["Client Browser (OmniLens Client)"]
         UI["React 19 UI & Controls"]
         Mic["Microphone Input (16kHz PCM)"]
-        Display["Screen / Camera Capture (JPEG)"]
+        Display["Screen or Camera Capture (JPEG)"]
         AudioOut["AudioContext Playback (24kHz PCM)"]
         Visualizer["Neon FFT Visualizer"]
         NotesState["Notes & Action Items Store"]
@@ -76,13 +76,13 @@ flowchart TD
     end
 
     subgraph GoogleEdge ["Google Gemini API Infrastructure"]
-        LiveWS["Gemini Live WebSocket Gateway\n(wss://generativelanguage.googleapis.com)"]
-        ModelCore["Gemini Multimodal Live Engine\n(gemini-3.1-flash-live-preview)"]
-        RestAPI["Gemini Flash Lite REST API\n(gemini-3.1 / 3.5 Flash Lite)"]
+        LiveWS["Gemini Live WebSocket Gateway (BidiGenerateContent)"]
+        ModelCore["Gemini Multimodal Live Engine (gemini-3.1-flash-live-preview)"]
+        RestAPI["Gemini Flash Lite REST API (gemini-3.1 / 3.5 Flash Lite)"]
     end
 
     subgraph ExternalServices ["External Knowledge Services"]
-        Brave["Brave Search API\n(/api/brave Edge Proxy)"]
+        Brave["Brave Search API (/api/brave Edge Proxy)"]
         Wiki["Wikipedia REST API"]
         Meteo["Open-Meteo Weather API"]
     end
@@ -90,12 +90,12 @@ flowchart TD
     %% Client data paths
     Mic -->|Raw Audio| LiveClient
     Display -->|1-5 FPS JPEG| LiveClient
-    UI -->|Typed Input / Config| LiveClient
+    UI -->|Typed Input & Config| LiveClient
     SettingsStore -.->|API Key| LiveClient
 
     %% WebSocket Bidirectional Pipe
-    LiveClient <==>|BidiGenerateContent Protocol\nTLS WebSocket| LiveWS
-    LiveWS <==> ModelCore
+    LiveClient <-->|BidiGenerateContent Protocol (TLS WebSocket)| LiveWS
+    LiveWS <--> ModelCore
 
     %% Audio playback & visualizer
     LiveClient -->|24kHz PCM Chunks| AudioOut
@@ -132,20 +132,20 @@ sequenceDiagram
     User->>Mic: Speaks into microphone
     Mic->>Mic: ScriptProcessor resamples to 16kHz mono Linear PCM
     Mic->>Mic: Silence-gain node prevents audio echo loop
-    Mic->>Client: Base64 PCM chunk (20ms–100ms)
-    Client->>WS: realtimeInput.audio { mimeType: "audio/pcm;rate=16000", data }
+    Mic->>Client: Base64 PCM chunk (20ms to 100ms)
+    Client->>WS: Stream realtimeInput audio chunk (16kHz PCM)
     
     Note over WS: Gemini VAD processes audio stream
     
-    WS-->>Client: serverContent.modelTurn.parts[].inlineData (24kHz PCM)
-    Client-->>Player: playChunk(base64Pcm)
+    WS-->>Client: Stream modelTurn audio chunk (24kHz PCM)
+    Client-->>Player: playChunk with base64 PCM
     Player-->>Speaker: Web Audio AudioBufferSourceNode scheduled playback
     
     opt User Speaks (Interruption)
         User->>Mic: Interrupts AI mid-sentence
         Mic->>WS: User speech stream detected
-        WS-->>Client: serverContent.interrupted: true
-        Client->>Player: interrupt() -> stop all sources, reset playhead
+        WS-->>Client: serverContent interrupted signal
+        Client->>Player: interrupt() stops sources and resets playhead
         Player-->>Speaker: Playback cuts off instantly (<20ms)
     end
 ```
@@ -168,14 +168,14 @@ sequenceDiagram
     participant Client as GeminiLiveClient
     participant WS as Gemini Live WebSocket
 
-    User->>Screen: Enable Screen Share (or Webcam)
+    User->>Screen: Enable Screen Share or Webcam
     Screen->>Screen: navigator.mediaDevices.getDisplayMedia()
     loop Every Frame (1 to 5 FPS)
         Screen->>Canvas: Draw video frame to HTMLCanvasElement
-        Canvas->>Canvas: Aspect-ratio preserving downscale (Max 1024x1024)
-        Canvas->>Canvas: canvas.toDataURL("image/jpeg", 0.7)
+        Canvas->>Canvas: Downscale with aspect ratio (Max 1024x1024)
+        Canvas->>Canvas: Compress to JPEG format (0.7 quality)
         Canvas->>Client: Base64 JPEG frame
-        Client->>WS: realtimeInput.video { mimeType: "image/jpeg", data }
+        Client->>WS: Stream realtimeInput video frame (JPEG)
     end
 ```
 
@@ -191,29 +191,29 @@ Google's Gemini Live API imposes a connection lifetime limit of approximately **
 ```mermaid
 stateDiagram-v2
     [*] --> Disconnected
-    Disconnected --> Connecting: User clicks "Connect Live"
+    Disconnected --> Connecting: User clicks Connect Live
     Connecting --> Connected: Handshake complete (setupComplete)
     
     state Connected {
         [*] --> Streaming
         Streaming --> TokenSaved: Server sends sessionResumptionUpdate
         TokenSaved --> Streaming: Handle cached for reconnect
-        Streaming --> ProactiveReconnect: Server sends goAway { timeLeft }
-        Streaming --> TimeoutReconnect: Server drops (Code 1008 / Timeout)
+        Streaming --> ProactiveReconnect: Server sends goAway warning
+        Streaming --> TimeoutReconnect: Server disconnects (Code 1008 or Timeout)
     }
 
     Connected --> Reconnecting: Connection drops or GoAway received
     
     state Reconnecting {
-        [*] --> BackoffWait: Attempt 1 (1s) -> Attempt 2 (2s) -> Attempt 3 (4s)
-        BackoffWait --> ReconnectSocket: New WebSocket with cached handle
-        ReconnectSocket --> Handshake: Send setup { sessionResumption: { handle } }
+        [*] --> BackoffWait: Attempt 1 (1s), Attempt 2 (2s), Attempt 3 (4s)
+        BackoffWait --> ReconnectSocket: Open new WebSocket with cached handle
+        ReconnectSocket --> Handshake: Send setup payload with resumption handle
     }
 
-    Reconnecting --> Connected: Handshake successful (context restored!)
-    Reconnecting --> Error: Max attempts (3) exceeded
-    Connected --> Disconnected: User clicks "End Session" (code 1000)
-    Error --> Disconnected: User clicks Reset
+    Reconnecting --> Connected: Handshake successful (context restored)
+    Reconnecting --> Error: Max reconnect attempts (3) exceeded
+    Connected --> Disconnected: User clicks End Session (code 1000)
+    Error --> Disconnected: User resets connection
 ```
 
 - **Resumption Token Caching**: Whenever Gemini emits a `sessionResumptionUpdate` containing a `newHandle`, OmniLens stores it in memory (valid for up to 2 hours).
