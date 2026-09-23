@@ -86,6 +86,15 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     expect(setupMsg.setup.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
     expect(setupMsg.setup.contextWindowCompression).toEqual({ slidingWindow: {} });
     expect(setupMsg.setup.sessionResumption).toEqual({ handle: null });
+    expect(setupMsg.setup.realtimeInputConfig).toEqual({
+      automaticActivityDetection: {
+        disabled: false,
+        startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+        endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+        prefixPaddingMs: 40,
+        silenceDurationMs: 600,
+      },
+    });
   });
 
   it('maps gemini-3.8-live to models/gemini-3.1-flash-live-preview with medium thinkingLevel', async () => {
@@ -406,13 +415,21 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     mockWsInstance.triggerMessage({ setupComplete: {} });
 
-    // Server sends user speech transcript
+    // Server sends interim user speech transcript
+    mockWsInstance.triggerMessage({
+      serverContent: {
+        interimInputTranscription: { text: 'How do I' },
+      },
+    });
+    expect(callbacks.onInputTranscription).toHaveBeenCalledWith('How do I', true);
+
+    // Server sends finalized user speech transcript
     mockWsInstance.triggerMessage({
       serverContent: {
         inputTranscription: { text: 'How do I debug line 12?' },
       },
     });
-    expect(callbacks.onInputTranscription).toHaveBeenCalledWith('How do I debug line 12?');
+    expect(callbacks.onInputTranscription).toHaveBeenCalledWith('How do I debug line 12?', false);
 
     // Server sends AI audio chunk and transcript
     mockWsInstance.triggerMessage({

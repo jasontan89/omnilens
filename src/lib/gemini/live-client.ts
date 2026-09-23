@@ -34,7 +34,7 @@ export function resolveLiveApiModel(model: LiveModel): string {
 export interface LiveClientCallbacks {
   onConnectionChange: (state: ConnectionState, error?: string) => void;
   onAudioChunk: (base64Pcm: string) => void;
-  onInputTranscription: (text: string) => void;
+  onInputTranscription: (text: string, isPartial?: boolean) => void;
   onOutputTranscription: (text: string) => void;
   onInterrupted: () => void;
   onTurnComplete: () => void;
@@ -283,6 +283,15 @@ export class GeminiLiveClient {
         sessionResumption: {
           handle: this.resumptionHandle,
         },
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            disabled: false,
+            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+            endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+            prefixPaddingMs: 40,
+            silenceDurationMs: 600,
+          },
+        },
       },
     };
 
@@ -368,9 +377,11 @@ export class GeminiLiveClient {
       }
     }
 
-    // User speech transcription
+    // User speech transcription (live interim and final)
     if (content.inputTranscription?.text) {
-      this.callbacks.onInputTranscription(content.inputTranscription.text);
+      this.callbacks.onInputTranscription(content.inputTranscription.text, false);
+    } else if (content.interimInputTranscription?.text) {
+      this.callbacks.onInputTranscription(content.interimInputTranscription.text, true);
     }
 
     // AI speech transcription

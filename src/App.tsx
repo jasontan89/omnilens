@@ -133,7 +133,8 @@ export const App: React.FC = () => {
       sender: 'user' | 'gemini' | 'system',
       text: string,
       searchSources?: { title: string; uri: string }[],
-      searchQuery?: string
+      searchQuery?: string,
+      isPartial?: boolean
     ) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -142,12 +143,15 @@ export const App: React.FC = () => {
           sender !== 'system' &&
           last &&
           last.sender === sender &&
-          Date.now() - last.timestamp.getTime() < 3500
+          (last.isPartial || Date.now() - last.timestamp.getTime() < 3500)
         ) {
           const updated = [...prev];
+          const newText = last.isPartial ? text : `${last.text} ${text}`.trim();
           updated[updated.length - 1] = {
             ...last,
-            text: `${last.text} ${text}`.trim(),
+            text: newText,
+            isPartial: !!isPartial,
+            timestamp: new Date(),
           };
           return updated;
         }
@@ -161,6 +165,7 @@ export const App: React.FC = () => {
             timestamp: new Date(),
             searchSources,
             searchQuery,
+            isPartial: !!isPartial,
           },
         ];
       });
@@ -261,30 +266,32 @@ export const App: React.FC = () => {
           setGeminiAnalyser(pcmPlayerRef.current.getAnalyser());
         }
       },
-      onInputTranscription: (text) => {
-        addTranscriptMessage('user', text);
+      onInputTranscription: (text, isPartial) => {
+        addTranscriptMessage('user', text, undefined, undefined, isPartial);
 
-        // Heuristic: User speech asking to capture a note or todo
-        const lower = text.toLowerCase();
-        if (
-          lower.includes('take note') ||
-          lower.includes('action item') ||
-          lower.includes('todo') ||
-          lower.includes('remember this') ||
-          lower.startsWith('note:')
-        ) {
-          const cleanTitle = text
-            .replace(/^(take a? note(:|that)?|action item:?|todo:?|remember this(:|that)?|note:?)\s*/i, '')
-            .slice(0, 50)
-            .trim();
+        if (!isPartial) {
+          // Heuristic: User speech asking to capture a note or todo (process only on finalized transcription)
+          const lower = text.toLowerCase();
+          if (
+            lower.includes('take note') ||
+            lower.includes('action item') ||
+            lower.includes('todo') ||
+            lower.includes('remember this') ||
+            lower.startsWith('note:')
+          ) {
+            const cleanTitle = text
+              .replace(/^(take a? note(:|that)?|action item:?|todo:?|remember this(:|that)?|note:?)\s*/i, '')
+              .slice(0, 50)
+              .trim();
 
-          if (cleanTitle) {
-            handleAddNote({
-              title: cleanTitle,
-              content: text,
-              type: 'action-item',
-              completed: false,
-            });
+            if (cleanTitle) {
+              handleAddNote({
+                title: cleanTitle,
+                content: text,
+                type: 'action-item',
+                completed: false,
+              });
+            }
           }
         }
       },
@@ -352,11 +359,19 @@ export const App: React.FC = () => {
 
       await pcmPlayerRef.current?.resume();
 
-      const recorder = new PcmRecorder((base64Pcm) => {
-        if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
-          liveClientRef.current.sendAudioChunk(base64Pcm);
+      const recorder = new PcmRecorder(
+        (base64Pcm) => {
+          if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
+            liveClientRef.current.sendAudioChunk(base64Pcm);
+          }
+        },
+        () => {
+          // Client-side Hybrid VAD: user paused speaking after active speech, flush & prompt model response
+          if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
+            liveClientRef.current.sendAudioStreamEnd();
+          }
         }
-      });
+      );
 
       await recorder.start();
       pcmRecorderRef.current = recorder;

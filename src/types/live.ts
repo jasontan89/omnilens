@@ -101,6 +101,15 @@ export interface BidiContentSetup {
     sessionResumption?: {
       handle?: string | null;
     };
+    realtimeInputConfig?: {
+      automaticActivityDetection?: {
+        disabled?: boolean;
+        startOfSpeechSensitivity?: 'START_SENSITIVITY_HIGH' | 'START_SENSITIVITY_LOW' | 'START_SENSITIVITY_UNSPECIFIED';
+        endOfSpeechSensitivity?: 'END_SENSITIVITY_HIGH' | 'END_SENSITIVITY_LOW' | 'END_SENSITIVITY_UNSPECIFIED';
+        prefixPaddingMs?: number;
+        silenceDurationMs?: number;
+      };
+    };
   };
 }
 
@@ -170,9 +179,13 @@ export interface BidiServerMessage {
     inputTranscription?: {
       text: string;
     };
+    interimInputTranscription?: {
+      text: string;
+    };
     outputTranscription?: {
       text: string;
     };
+    waitingForInput?: boolean;
   };
   toolCall?: {
     functionCalls: BidiFunctionCall[];
