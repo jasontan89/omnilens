@@ -138,24 +138,39 @@ export const App: React.FC = () => {
     ) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        if (
-          !searchSources &&
-          sender !== 'system' &&
-          last &&
-          last.sender === sender &&
-          (last.isPartial || Date.now() - last.timestamp.getTime() < 3500)
-        ) {
+
+        // 1. User transcription handling:
+        // Update the current in-flight partial user message without overwriting previous finalized turns
+        if (sender === 'user' && last && last.sender === 'user' && last.isPartial) {
           const updated = [...prev];
-          const newText = last.isPartial ? text : `${last.text} ${text}`.trim();
           updated[updated.length - 1] = {
             ...last,
-            text: newText,
+            text,
             isPartial: !!isPartial,
             timestamp: new Date(),
           };
           return updated;
         }
 
+        // 2. Gemini model output streaming:
+        // While Gemini is speaking/streaming its response in the current turn, append chunks cleanly
+        if (sender === 'gemini' && last && last.sender === 'gemini' && !searchSources) {
+          const updated = [...prev];
+          const needsSpace =
+            last.text.length > 0 &&
+            !/\s$/.test(last.text) &&
+            !/^\s/.test(text) &&
+            !/^[.,!?;:]/.test(text);
+          const newText = needsSpace ? `${last.text} ${text}` : `${last.text}${text}`;
+          updated[updated.length - 1] = {
+            ...last,
+            text: newText,
+            timestamp: new Date(),
+          };
+          return updated;
+        }
+
+        // 3. New message: start a fresh bubble
         return [
           ...prev,
           {
@@ -359,19 +374,11 @@ export const App: React.FC = () => {
 
       await pcmPlayerRef.current?.resume();
 
-      const recorder = new PcmRecorder(
-        (base64Pcm) => {
-          if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
-            liveClientRef.current.sendAudioChunk(base64Pcm);
-          }
-        },
-        () => {
-          // Client-side Hybrid VAD: user paused speaking after active speech, flush & prompt model response
-          if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
-            liveClientRef.current.sendAudioStreamEnd();
-          }
+      const recorder = new PcmRecorder((base64Pcm) => {
+        if (!isMicMuted && liveClientRef.current?.getIsConnected()) {
+          liveClientRef.current.sendAudioChunk(base64Pcm);
         }
-      );
+      });
 
       await recorder.start();
       pcmRecorderRef.current = recorder;

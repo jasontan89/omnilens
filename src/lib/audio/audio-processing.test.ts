@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PcmRecorder } from './pcm-recorder';
 
 describe('Audio Processing Subsystem', () => {
-  it('accurately downsamples 48kHz audio to 16kHz (3:1 reduction) with continuous phase', () => {
+  it('accurately downsamples 48kHz audio to 16kHz (3:1 boxcar averaging) with anti-aliasing', () => {
     const recorder = new PcmRecorder(() => {});
     // 480 samples at 48kHz is 10ms
     const input = new Float32Array(480);
@@ -31,17 +31,20 @@ describe('Audio Processing Subsystem', () => {
     expect(output[0]).toBeCloseTo(0.5, 2);
   });
 
-  it('converts Float32 audio samples into 16-bit linear PCM with 1.6x pre-gain boost and soft limiting', () => {
+  it('converts Float32 audio samples into 16-bit linear PCM with clean clamping (no harmonic distortion)', () => {
     const recorder = new PcmRecorder(() => {});
-    const input = new Float32Array([0.0, 0.1, -0.1, 0.5, -0.5, 1.5, -2.0]);
+    const input = new Float32Array([0.0, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.5, -2.0]);
     const pcm = recorder.float32ToInt16(input);
 
     expect(pcm[0]).toBe(0);
-    // Boosted quiet signal: 0.1 * 1.6 = 0.16 -> tanh(0.16) * 32767 ≈ 5199
-    expect(pcm[1]).toBeGreaterThan(3277); // significantly higher than raw 0.1 * 32767
-    expect(pcm[2]).toBeLessThan(-3277);
-    // Loud signals smoothly saturated within 16-bit range without overflowing
-    expect(pcm[5]).toBeLessThanOrEqual(32767);
-    expect(pcm[6]).toBeGreaterThanOrEqual(-32768);
+    expect(pcm[1]).toBe(Math.round(0.1 * 0x7fff));
+    expect(pcm[2]).toBe(Math.round(-0.1 * 0x8000));
+    expect(pcm[3]).toBe(Math.round(0.5 * 0x7fff));
+    expect(pcm[4]).toBe(Math.round(-0.5 * 0x8000));
+    expect(pcm[5]).toBe(32767);
+    expect(pcm[6]).toBe(-32768);
+    // Values outside [-1, 1] clamped without overflow
+    expect(pcm[7]).toBe(32767);
+    expect(pcm[8]).toBe(-32768);
   });
 });

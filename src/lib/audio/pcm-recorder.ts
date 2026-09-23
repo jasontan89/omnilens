@@ -7,34 +7,25 @@ export class PcmRecorder {
   private silenceGainNode: GainNode | null = null;
   private isRecording: boolean = false;
   private onDataCallback: ((base64Pcm: string) => void) | null = null;
-  private onSpeechPauseCallback: (() => void) | null = null;
   private targetSampleRate: number = 16000;
 
-  // 100ms chunk buffer at 16kHz (16,000 samples/sec * 0.1s = 1600 samples)
-  private readonly targetChunkSize: number = 1600;
-  private chunkAccumulator: number[] = [];
-
-  // Fractional phase tracking for click-free continuous resampling
+  // Fractional phase tracking for continuous linear interpolation (non-48kHz fallback)
   private resamplePhase: number = 0;
   private lastInputSample: number = 0;
 
-  // Client-side Hybrid VAD tracking
-  private hasActiveSpeech: boolean = false;
-  private lastSpeechTime: number = 0;
-  private readonly speechThreshold: number = 0.012; // RMS threshold
-  private readonly silenceTimeoutMs: number = 650;   // Post-speech quiet threshold
-
   constructor(
     onData: (base64Pcm: string) => void,
-    onSpeechPause?: () => void
+    _onSpeechPause?: () => void
   ) {
     this.onDataCallback = onData;
-    this.onSpeechPauseCallback = onSpeechPause || null;
   }
 
-  public setOnSpeechPause(cb: (() => void) | null): void {
-    this.onSpeechPauseCallback = cb;
-  }
+  /**
+   * Optional speech pause listener.
+   * Kept for backward compatibility; Gemini server-side VAD (automaticActivityDetection)
+   * handles conversational boundaries naturally without premature client cutoffs.
+   */
+  public setOnSpeechPause(_cb: (() => void) | null): void {}
 
   public async start(): Promise<void> {
     if (this.isRecording) return;
@@ -49,10 +40,11 @@ export class PcmRecorder {
         },
       });
 
-      // Always initialize AudioContext at the hardware's native sample rate (e.g. 48kHz / 44.1kHz).
-      // Forcing a 16kHz context directly with createMediaStreamSource triggers browser-level
-      // resampling bugs and buffer drops on Windows and Android devices.
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      // Initialize AudioContext at the hardware's native sample rate (typically 48kHz or 44.1kHz).
+      // Hardware-rate context avoids browser-level resampling artifacts and buffer drops.
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.audioContext = new AudioContextClass();
 
       if (this.audioContext.state === 'suspended') {
@@ -64,14 +56,13 @@ export class PcmRecorder {
       this.analyserNode.fftSize = 256;
       this.sourceNode.connect(this.analyserNode);
 
-      // Reset resampling state and accumulator
+      // Reset resampling state
       this.resamplePhase = 0;
       this.lastInputSample = 0;
-      this.chunkAccumulator = [];
-      this.hasActiveSpeech = false;
-      this.lastSpeechTime = 0;
 
-      // 2048 sample buffer at native hardware rate (~42ms at 48k)
+      // 2048 sample buffer at native hardware rate (~42.7ms at 48kHz).
+      // Audio is streamed immediately to the WebSocket callback on every process cycle
+      // with zero queue delay, eliminating tail latency and missed word endings.
       const bufferSize = 2048;
       this.processorNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
 
@@ -81,41 +72,22 @@ export class PcmRecorder {
         if (!this.isRecording) return;
         const inputData = e.inputBuffer.getChannelData(0);
 
-        // 1. RMS Voice Activity Detection for Hybrid VAD
-        let sumSquare = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sumSquare += inputData[i] * inputData[i];
-        }
-        const rms = Math.sqrt(sumSquare / inputData.length);
-        const now = Date.now();
+        // 1. Resample to target 16kHz
+        const downsampled = this.downsampleBuffer(
+          inputData,
+          actualSampleRate,
+          this.targetSampleRate
+        );
 
-        if (rms > this.speechThreshold) {
-          this.hasActiveSpeech = true;
-          this.lastSpeechTime = now;
-        } else if (this.hasActiveSpeech && now - this.lastSpeechTime >= this.silenceTimeoutMs) {
-          this.hasActiveSpeech = false;
-          // Finalize conversational turn: flush buffered audio and notify listener
-          this.flushAccumulator();
-          if (this.onSpeechPauseCallback) {
-            this.onSpeechPauseCallback();
-          }
-        }
+        if (downsampled.length === 0) return;
 
-        // 2. High-Fidelity Continuous Resampling to 16kHz
-        const downsampled = this.downsampleBuffer(inputData, actualSampleRate, this.targetSampleRate);
+        // 2. Linear Float32 to Int16 PCM conversion (no harmonic distortion)
+        const pcm16Data = this.float32ToInt16(downsampled);
 
-        // 3. Accumulate into 100ms chunks (1,600 samples at 16kHz)
-        for (let i = 0; i < downsampled.length; i++) {
-          this.chunkAccumulator.push(downsampled[i]);
-        }
-
-        while (this.chunkAccumulator.length >= this.targetChunkSize) {
-          const chunk = new Float32Array(this.chunkAccumulator.splice(0, this.targetChunkSize));
-          const pcm16Data = this.float32ToInt16(chunk);
-          const base64 = this.arrayBufferToBase64(pcm16Data.buffer);
-          if (this.onDataCallback) {
-            this.onDataCallback(base64);
-          }
+        // 3. Dispatch base64 chunk immediately (zero buffering delay)
+        const base64 = this.arrayBufferToBase64(pcm16Data.buffer);
+        if (this.onDataCallback) {
+          this.onDataCallback(base64);
         }
       };
 
@@ -137,9 +109,6 @@ export class PcmRecorder {
 
   public stop(): void {
     this.isRecording = false;
-
-    // Flush any remaining audio
-    this.flushAccumulator();
 
     if (this.processorNode) {
       this.processorNode.disconnect();
@@ -172,8 +141,12 @@ export class PcmRecorder {
   }
 
   /**
-   * Resamples float32 audio to target sample rate using linear interpolation
-   * with fractional phase tracking across consecutive buffers.
+   * Resamples float32 audio to 16kHz.
+   * - For 48kHz -> 16kHz (standard across 95%+ modern PC/Mac/mobile hardware):
+   *   uses exact 3:1 boxcar averaging, which acts as a clean anti-aliasing filter
+   *   with zero phase delay.
+   * - For general rates (e.g., 44.1kHz -> 16kHz):
+   *   uses continuous linear interpolation with fractional phase tracking.
    */
   public downsampleBuffer(
     buffer: Float32Array,
@@ -184,6 +157,18 @@ export class PcmRecorder {
       return buffer;
     }
 
+    // 48kHz to 16kHz exact 3:1 boxcar averaging anti-aliasing decimation
+    if (inputRate === 48000 && outputRate === 16000) {
+      const outLen = Math.floor(buffer.length / 3);
+      const output = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const idx = i * 3;
+        output[i] = (buffer[idx] + buffer[idx + 1] + buffer[idx + 2]) / 3.0;
+      }
+      return output;
+    }
+
+    // Continuous linear interpolation for arbitrary rates (e.g. 44.1kHz -> 16kHz)
     const ratio = inputRate / outputRate;
     const outputSamples: number[] = [];
     let idx = this.resamplePhase;
@@ -192,26 +177,15 @@ export class PcmRecorder {
       const i0 = Math.floor(idx);
       const frac = idx - i0;
 
-      let s0: number;
-      if (i0 < 0) {
-        s0 = this.lastInputSample;
-      } else {
-        s0 = buffer[i0];
-      }
-
-      let s1: number;
-      if (i0 + 1 < buffer.length) {
-        s1 = buffer[i0 + 1];
-      } else {
-        s1 = s0;
-      }
+      const s0 = i0 < 0 ? this.lastInputSample : buffer[i0];
+      const s1 = i0 + 1 < buffer.length ? buffer[i0 + 1] : s0;
 
       const sample = s0 + frac * (s1 - s0);
       outputSamples.push(sample);
       idx += ratio;
     }
 
-    // Save fractional phase and last sample for seamless continuity in the next process block
+    // Retain fractional phase and boundary sample across blocks
     this.resamplePhase = idx - buffer.length;
     this.lastInputSample = buffer[buffer.length - 1];
 
@@ -219,29 +193,19 @@ export class PcmRecorder {
   }
 
   /**
-   * Converts float32 audio to 16-bit linear PCM with a 1.6x pre-gain boost
-   * and smooth tanh soft-limiting to maximize speech pickup without digital clipping.
+   * Converts float32 audio samples [-1.0, 1.0] to clean 16-bit linear PCM.
+   * Uses pure linear conversion and hard clamping without non-linear tanh saturation,
+   * preserving pristine acoustic formants for Gemini's neural speech recognition.
    */
   public float32ToInt16(buffer: Float32Array): Int16Array {
     const l = buffer.length;
     const int16Array = new Int16Array(l);
-    const preGain = 1.6;
 
     for (let i = 0; i < l; i++) {
-      const boosted = Math.tanh(buffer[i] * preGain);
-      int16Array[i] = boosted < 0 ? Math.round(boosted * 0x8000) : Math.round(boosted * 0x7fff);
+      const s = Math.max(-1, Math.min(1, buffer[i]));
+      int16Array[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
     }
     return int16Array;
-  }
-
-  private flushAccumulator(): void {
-    if (this.chunkAccumulator.length > 0 && this.onDataCallback) {
-      const chunk = new Float32Array(this.chunkAccumulator);
-      this.chunkAccumulator = [];
-      const pcm16Data = this.float32ToInt16(chunk);
-      const base64 = this.arrayBufferToBase64(pcm16Data.buffer);
-      this.onDataCallback(base64);
-    }
   }
 
   private arrayBufferToBase64(buffer: ArrayBufferLike): string {

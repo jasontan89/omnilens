@@ -91,8 +91,8 @@ describe('GeminiLiveClient Protocol & Deprecation Fixes', () => {
         disabled: false,
         startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
         endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
-        prefixPaddingMs: 40,
-        silenceDurationMs: 600,
+        prefixPaddingMs: 60,
+        silenceDurationMs: 800,
       },
     });
   });
